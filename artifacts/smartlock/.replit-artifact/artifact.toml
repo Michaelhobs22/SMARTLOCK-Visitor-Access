@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/smartlock/"
+title = "SMARTLOCK"
+description = "A QR-based residential visitor access app. Residents manage temporary guest passes, visitors generate a QR access pass through free or premium flow, and a simulated smart lock validates entry."
+version = "1.0.0"
+id = "artifacts/smartlock"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/smartlock/" ]
+localPort = 22578
+
+[services.development]
+run = "pnpm --filter @workspace/smartlock run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/smartlock", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/smartlock/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22578"
+BASE_PATH = "/smartlock/"

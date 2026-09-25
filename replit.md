@@ -1,10 +1,12 @@
-# [Project name]
+# SMARTLOCK
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A QR-based residential visitor access demo for issuing, managing, and simulating verification of temporary guest passes.
 
 ## Run & Operate
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/smartlock run dev` — run the SMARTLOCK web app
+- `pnpm --filter @workspace/smartlock run typecheck` — typecheck SMARTLOCK
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
@@ -22,15 +24,20 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/smartlock/src/App.tsx` — resident overview, guest pass flow, and simulated lock verifier
+- `artifacts/smartlock/src/index.css` — SMARTLOCK responsive visual theme
+- `artifacts/smartlock/package.json` — web app scripts and dependencies
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Visitor passes are stored in browser localStorage for this demo; this is not a secure shared production store.
+- QR codes are rendered locally in the browser so pass tokens are not sent to a third-party QR service.
+- The lock screen verifies tokens in the browser only; it does not scan with a camera or control door hardware.
+- Standard and Premium are demonstration flows, not a live ad network or payment integration.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Residents can issue temporary QR passes, review or revoke them, and see recent pass activity. Visitors can create Standard or Premium demo passes and share a QR code/token. A simulated lock can validate a token and enforce expiration, revocation, and one-time use.
 
 ## User preferences
 
