@@ -1,0 +1,971 @@
+# SMARTLOCK — FINAL PROJECT SPECIFICATION
+
+## 1. PROJECT OVERVIEW
+
+SMARTLOCK is a QR-based visitor access management system for homes, apartments, dormitories, and rental properties.
+
+The system allows a resident/property owner to create secure, time-limited visitor passes for individual guests. Each pass contains a unique access code and QR code. The resident can view, manage, and revoke passes, while a simulated smart lock validates visitor credentials and determines whether access should be granted or denied.
+
+The goal is to make SMARTLOCK feel like a complete, polished, working smart-access product suitable for a university final project demonstration.
+
+IMPORTANT:
+
+Do NOT rebuild the application from scratch if an existing SMARTLOCK application/codebase is already present in this Replit project.
+
+First inspect the existing codebase, understand its current functionality, preserve working features, and then improve/refactor/complete it.
+
+Do not remove existing functionality unless it is broken or conflicts with the requirements below.
+
+---
+
+# 2. FINAL PROJECT GOAL
+
+Transform the current SMARTLOCK application into a polished, reliable, demonstration-ready final project.
+
+The application should allow the complete flow:
+
+Resident Dashboard
+→ Create Visitor Pass
+→ Configure Guest + Expiration + Pass Type
+→ Generate Access Code + QR Code
+→ View Pass
+→ Share/Copy Pass
+→ Visitor enters/scans credential
+→ Smart Lock validates credential
+→ Access Granted or Access Denied
+→ Pass becomes Used when appropriate
+→ Resident can monitor/revoke passes
+
+Everything included in the final demonstration must work reliably.
+
+---
+
+# 3. CORE FEATURES
+
+## A. RESIDENT DASHBOARD
+
+Create a professional dashboard for the resident/property owner.
+
+The dashboard should display:
+
+* Total passes
+* Active passes
+* Used passes
+* Expired passes
+* Revoked passes
+
+Include a prominent:
+
+"Create Visitor Pass"
+
+button.
+
+Display a visitor-pass table/list containing:
+
+* Guest name
+* Pass type
+* Access code
+* Status
+* Created date/time
+* Expiration date/time
+* Actions
+
+Actions should include:
+
+* View
+* Copy Code
+* Revoke
+
+The dashboard should automatically update when a pass changes state.
+
+---
+
+# 4. CREATE VISITOR PASS
+
+Create a clean form for creating a visitor pass.
+
+Required fields:
+
+### Guest Information
+
+* Guest name
+
+Optional:
+
+* Guest purpose/notes
+
+### Pass Type
+
+Standard
+Premium
+
+Standard and Premium should have visibly different UI treatment.
+
+### Access Duration
+
+Allow the resident to select or configure expiration.
+
+Recommended options:
+
+* 30 minutes
+* 1 hour
+* 4 hours
+* 12 hours
+* 24 hours
+* Custom expiration
+
+The system must validate that expiration is in the future.
+
+### Sponsor Step
+
+For the Standard pass, retain the existing sponsor/ad demonstration if already implemented.
+
+The sponsor step is ONLY a demonstration.
+
+Do not integrate a real advertising network.
+
+Premium should demonstrate the ability to skip the sponsor step.
+
+Do not implement real payment processing.
+
+After completing the required steps:
+
+Generate the visitor pass.
+
+---
+
+# 5. ACCESS CODE GENERATION
+
+Every visitor pass must receive a unique access code.
+
+Requirements:
+
+* Codes must be difficult to guess.
+* Do not use sequential codes such as 000001, 000002, etc.
+* Generate a random code.
+* Avoid duplicate active codes.
+* Display the code clearly.
+* Provide a Copy button.
+
+Example format:
+
+SL-7K4P92
+
+or another secure readable format.
+
+The exact format may be chosen by the implementation.
+
+---
+
+# 6. QR CODE GENERATION
+
+Every visitor pass must automatically receive a QR code.
+
+The QR code should encode enough information for the application to identify the visitor pass.
+
+Prefer encoding a secure pass identifier/token rather than exposing unnecessary personal information.
+
+The QR code should:
+
+* Render clearly
+* Be downloadable if practical
+* Be easy to scan
+* Be displayed on the pass page
+* Correspond to the correct visitor pass
+
+Do not generate a fake visual QR code.
+
+It must contain real encoded data that the application can validate.
+
+---
+
+# 7. VISITOR PASS PAGE
+
+Each visitor pass must have its own dedicated page/view.
+
+Display:
+
+* SMARTLOCK branding
+* Guest name
+* Pass type
+* QR code
+* Access code
+* Status
+* Creation date/time
+* Expiration date/time
+* Remaining time if active
+* Notes/purpose if provided
+
+Actions:
+
+* Copy Access Code
+* Download QR
+* Share Pass if supported
+* Revoke Pass
+
+The page should clearly communicate whether the pass is:
+
+ACTIVE
+USED
+EXPIRED
+REVOKED
+
+Use clear visual status indicators.
+
+---
+
+# 8. PASS STATUS SYSTEM
+
+Implement a reliable pass lifecycle.
+
+Possible states:
+
+### ACTIVE
+
+The pass:
+
+* Exists
+* Has not expired
+* Has not been revoked
+* Has not been used
+
+### USED
+
+The pass has successfully opened the simulated smart lock.
+
+A single-use pass must not be usable again.
+
+### EXPIRED
+
+The current time has passed the expiration time.
+
+Expired passes must automatically be rejected.
+
+### REVOKED
+
+The resident manually revoked the pass.
+
+Revoked passes must always be rejected.
+
+Status should be calculated reliably rather than relying only on a manually stored status.
+
+For example:
+
+If a pass is ACTIVE but its expiration time has passed, the UI should display EXPIRED.
+
+---
+
+# 9. SMART-LOCK SIMULATOR
+
+Create a dedicated Smart Lock simulation screen.
+
+This is one of the most important parts of the final demonstration.
+
+The page should visually resemble a smart-lock interface.
+
+Display:
+
+SMARTLOCK
+SECURE ACCESS
+
+Provide:
+
+### Access Code Entry
+
+Input field for the visitor's access code.
+
+Button:
+
+"Unlock Door"
+
+The system should validate the code.
+
+If valid:
+
+Show:
+
+ACCESS GRANTED
+
+Door unlocked successfully.
+
+Display:
+
+* Guest name
+* Pass type
+* Access time
+* Remaining/previous expiration information
+
+Then mark the pass as USED if the system is configured for single-use access.
+
+If invalid:
+
+Show:
+
+ACCESS DENIED
+
+and explain the reason.
+
+Possible reasons:
+
+* Invalid access code
+* Pass expired
+* Pass revoked
+* Pass already used
+
+Do NOT simply show "Invalid code" for every failure.
+
+The visitor should receive a meaningful reason.
+
+---
+
+# 10. QR ACCESS
+
+If the existing project already has QR scanning functionality, preserve and improve it.
+
+If practical within the current project architecture, provide:
+
+"Scan QR Code"
+
+on the Smart Lock screen.
+
+The QR scanner should identify the corresponding pass and validate it using the same validation logic as manual access-code entry.
+
+IMPORTANT:
+
+Do not create a fake scanner animation that does not actually process QR data.
+
+If real camera scanning cannot be implemented reliably within the current environment, keep the manual access-code system as the guaranteed working method and clearly label QR scanning as unavailable rather than creating broken functionality.
+
+---
+
+# 11. SECURITY / VALIDATION
+
+Implement proper validation.
+
+The system must reject:
+
+* Empty access codes
+* Invalid access codes
+* Expired passes
+* Revoked passes
+* Already-used passes
+
+Prevent duplicate active access codes.
+
+Do not trust client-side status alone.
+
+Create a centralized validation function such as:
+
+validateAccess(passOrCode)
+
+which determines:
+
+* whether the pass exists
+* whether it is expired
+* whether it is revoked
+* whether it is already used
+* whether access should be granted
+
+Use the same validation logic throughout the application.
+
+---
+
+# 12. LOCAL DATA STORAGE
+
+For the current final-project version, browser-based persistence is acceptable.
+
+Use localStorage or the project's existing persistence mechanism.
+
+IMPORTANT:
+
+Passes must survive:
+
+* Page refresh
+* Navigation between pages
+* Returning to the dashboard
+
+Do not keep important application state only in temporary React/component memory.
+
+The user should be able to:
+
+Create pass
+→ Refresh browser
+→ Still see pass.
+
+If localStorage is currently being used, preserve it unless there is a strong reason to replace it.
+
+Do not introduce a complicated backend solely for the sake of complexity.
+
+---
+
+# 13. DEMO RESET / DEVELOPMENT SUPPORT
+
+Add a safe development/demo mechanism if appropriate.
+
+For example:
+
+"Reset Demo Data"
+
+This should:
+
+* Remove generated demo passes
+* Restore the application to a clean state
+
+If possible, place it under a settings/developer section so it does not interfere with the normal user experience.
+
+Do NOT place a destructive reset button prominently on the main dashboard.
+
+---
+
+# 14. SEARCH / FILTERING
+
+If practical, add dashboard filtering.
+
+Allow the resident to filter passes by:
+
+* All
+* Active
+* Used
+* Expired
+* Revoked
+
+Optionally include search by:
+
+* Guest name
+* Access code
+
+This should make the dashboard feel like a real management system.
+
+---
+
+# 15. RESPONSIVE DESIGN
+
+The application must work properly on:
+
+* Desktop
+* Laptop
+* Tablet
+* Mobile
+
+Do not allow:
+
+* Text to overflow
+* Buttons to overlap
+* QR codes to become unreadable
+* Tables to break the layout
+* Navigation to become unusable
+
+The application should have a polished responsive layout.
+
+---
+
+# 16. UI / UX REQUIREMENTS
+
+SMARTLOCK should look like a real technology/security product.
+
+Design characteristics:
+
+* Modern
+* Clean
+* Professional
+* Security-focused
+* Minimal
+* Easy to understand
+
+Use consistent:
+
+* Typography
+* Spacing
+* Buttons
+* Cards
+* Icons
+* Status badges
+* Forms
+* Navigation
+
+Avoid:
+
+* Excessive animations
+* Random colors
+* Unnecessary gradients
+* Clutter
+* Placeholder text
+* Lorem ipsum
+* Broken icons
+* Debug text
+
+Use animations only where they improve UX.
+
+---
+
+# 17. NAVIGATION
+
+Create clear navigation.
+
+Recommended structure:
+
+Dashboard
+Visitor Passes
+Smart Lock
+Settings/About
+
+Depending on the current application structure, adapt this rather than unnecessarily rewriting the routing system.
+
+Every navigation link must work.
+
+No dead links.
+
+No buttons that appear functional but do nothing.
+
+---
+
+# 18. ERROR HANDLING
+
+The application must handle errors gracefully.
+
+Examples:
+
+Attempting to create a pass without a guest name:
+
+"Please enter the guest name."
+
+Expiration in the past:
+
+"Expiration time must be in the future."
+
+Empty access code:
+
+"Please enter an access code."
+
+Invalid access code:
+
+"Access denied — invalid visitor credential."
+
+Expired pass:
+
+"Access denied — this visitor pass has expired."
+
+Revoked pass:
+
+"Access denied — this visitor pass has been revoked."
+
+Used pass:
+
+"Access denied — this visitor pass has already been used."
+
+Avoid exposing raw JavaScript errors to the user.
+
+---
+
+# 19. TIME / EXPIRATION HANDLING
+
+Expiration must use the actual current time.
+
+Do not hard-code expiration behavior.
+
+If a pass expires at 5:00 PM, attempting access after 5:00 PM must fail.
+
+The dashboard and pass page should update the displayed status appropriately.
+
+If a countdown timer is used, it should update accurately.
+
+Handle browser refresh correctly.
+
+---
+
+# 20. PREMIUM VS STANDARD
+
+The Premium feature is currently a demonstration feature.
+
+Implement it clearly:
+
+STANDARD:
+
+* Includes sponsor demonstration step
+* Generates normal visitor pass
+
+PREMIUM:
+
+* Skips sponsor demonstration
+* Generates Premium visitor pass
+* Visually distinguishes Premium access
+
+Do NOT pretend that real payment has occurred.
+
+If a payment screen exists, label it as:
+
+"Demo Payment"
+
+or
+
+"Premium Demo"
+
+unless real payment processing is actually implemented.
+
+---
+
+# 21. NO FAKE FUNCTIONALITY
+
+This is extremely important.
+
+Do not leave buttons that do nothing.
+
+Do not create fake:
+
+* Payment processing
+* Advertisement verification
+* Camera scanning
+* Hardware communication
+* Cloud synchronization
+
+unless they actually work.
+
+If something is outside the project's scope, label it clearly as a demonstration or future integration.
+
+The final project should prioritize reliable working functionality over having a large number of incomplete features.
+
+---
+
+# 22. OPTIONAL HARDWARE SIMULATION
+
+If appropriate, create a visual representation of a smart lock.
+
+Example:
+
+LOCKED
+
+[ 🔒 ]
+
+Enter access code
+
+[ _________ ]
+
+[ UNLOCK DOOR ]
+
+When valid:
+
+UNLOCKING...
+
+then:
+
+🔓 DOOR UNLOCKED
+
+When invalid:
+
+🔒 ACCESS DENIED
+
+This is a simulation only.
+
+Do not claim that it physically controls a real door.
+
+---
+
+# 23. DATA MODEL
+
+Use a consistent visitor-pass structure.
+
+Recommended fields:
+
+id
+guestName
+passType
+accessCode
+qrToken
+createdAt
+expiresAt
+status
+usedAt
+revokedAt
+notes
+
+Example conceptual object:
+
+{
+id,
+guestName,
+passType,
+accessCode,
+qrToken,
+createdAt,
+expiresAt,
+status,
+usedAt,
+revokedAt,
+notes
+}
+
+Adapt this to the project's existing data model instead of unnecessarily replacing it.
+
+---
+
+# 24. CODE QUALITY
+
+Before considering the project finished:
+
+* Remove unused imports
+* Remove dead code
+* Remove console debugging
+* Remove placeholder content
+* Fix warnings
+* Fix broken links
+* Fix broken buttons
+* Fix incorrect routes
+* Fix duplicate logic
+* Use reusable components where appropriate
+* Keep naming consistent
+* Keep the code understandable for a university project
+
+Do not introduce unnecessary complexity.
+
+---
+
+# 25. TESTING
+
+Perform a complete manual test of the application.
+
+Test:
+
+### Test 1 — Create Standard Pass
+
+Create a Standard pass.
+
+Expected:
+
+Pass created successfully.
+
+### Test 2 — Create Premium Pass
+
+Create a Premium pass.
+
+Expected:
+
+Premium pass created successfully.
+
+### Test 3 — QR Generation
+
+Open a pass.
+
+Expected:
+
+Correct QR code appears.
+
+### Test 4 — Access Code
+
+Copy access code.
+
+Expected:
+
+Correct code copied.
+
+### Test 5 — Valid Access
+
+Enter a valid active access code.
+
+Expected:
+
+ACCESS GRANTED.
+
+### Test 6 — Used Pass
+
+Try the same code again.
+
+Expected:
+
+ACCESS DENIED — already used.
+
+### Test 7 — Revoked Pass
+
+Create a pass, revoke it, then attempt access.
+
+Expected:
+
+ACCESS DENIED — revoked.
+
+### Test 8 — Expired Pass
+
+Create/modify a pass so that it is expired.
+
+Attempt access.
+
+Expected:
+
+ACCESS DENIED — expired.
+
+### Test 9 — Invalid Code
+
+Enter random code.
+
+Expected:
+
+ACCESS DENIED — invalid credential.
+
+### Test 10 — Refresh
+
+Create a pass.
+
+Refresh the browser.
+
+Expected:
+
+Pass still exists.
+
+### Test 11 — Dashboard Status
+
+Use/revoke/expire passes.
+
+Expected:
+
+Dashboard counters and statuses update correctly.
+
+### Test 12 — Responsive UI
+
+Test desktop and mobile layouts.
+
+Expected:
+
+No major layout issues.
+
+---
+
+# 26. FINAL DEMONSTRATION FLOW
+
+The application should support this exact presentation flow:
+
+1. Open SMARTLOCK.
+2. Show the resident dashboard.
+3. Click "Create Visitor Pass."
+4. Enter guest name.
+5. Select Standard or Premium.
+6. Complete the demonstration sponsor step if Standard.
+7. Generate the visitor pass.
+8. Show the generated QR code.
+9. Show the access code.
+10. Copy the access code.
+11. Return to the dashboard.
+12. Show the newly created Active pass.
+13. Open Smart Lock.
+14. Enter the access code.
+15. Demonstrate ACCESS GRANTED.
+16. Show that the pass becomes USED.
+17. Try the same code again.
+18. Demonstrate ACCESS DENIED because the pass was already used.
+19. Create another pass.
+20. Revoke it.
+21. Attempt to unlock using the revoked pass.
+22. Demonstrate ACCESS DENIED — REVOKED.
+23. Demonstrate an expired pass if practical.
+24. Show the dashboard statistics.
+25. Show the overall SMARTLOCK workflow.
+
+The entire demonstration should be possible without editing source code or manually manipulating localStorage.
+
+---
+
+# 27. PROJECT LIMITATIONS
+
+The final application should clearly state:
+
+SMARTLOCK is currently a functional software simulation.
+
+The current version uses browser-based storage for visitor-pass data and simulates the physical smart-lock mechanism.
+
+The following are outside the current implementation:
+
+* Real physical door-lock hardware
+* Real payment processing
+* Real advertising network integration
+* Cloud database synchronization
+* Production authentication
+* SMS/email notification services
+
+These limitations should NOT make the application look unfinished.
+
+Present them as future integrations of the SMARTLOCK platform.
+
+---
+
+# 28. FINAL ABOUT SECTION
+
+Include an About/Project section containing something similar to:
+
+SMARTLOCK is a QR-based visitor access management system designed to provide residents and property owners with a convenient and controlled way to manage temporary guest access.
+
+The system demonstrates digital visitor-pass generation, QR-based identification, access-code validation, expiration management, pass revocation, single-use access, and smart-lock access simulation.
+
+The current version is designed as an academic software prototype and uses browser-based data storage and simulated smart-lock functionality.
+
+---
+
+# 29. FINAL CLEANUP
+
+Before declaring the project complete:
+
+1. Inspect the entire codebase.
+2. Identify existing features.
+3. Preserve working functionality.
+4. Implement missing requirements.
+5. Fix all obvious bugs.
+6. Test every major user flow.
+7. Test page refresh.
+8. Test navigation.
+9. Test pass expiration.
+10. Test pass revocation.
+11. Test single-use behavior.
+12. Test invalid credentials.
+13. Test responsive layout.
+14. Remove debug information.
+15. Remove placeholder content.
+16. Remove unused code.
+17. Ensure there are no broken buttons.
+18. Ensure there are no dead routes.
+19. Ensure there are no console errors caused by the application.
+20. Ensure the application can be demonstrated from start to finish.
+
+DO NOT stop after merely changing the UI.
+
+The underlying functionality must work.
+
+---
+
+# 30. IMPORTANT IMPLEMENTATION INSTRUCTION
+
+Before making changes, inspect the existing SMARTLOCK project and determine:
+
+* Current framework
+* Current routes
+* Current components
+* Current data storage
+* Existing pass-generation logic
+* Existing QR implementation
+* Existing smart-lock implementation
+* Existing sponsor flow
+* Existing Premium flow
+* Existing styling system
+
+Then make the minimum necessary architectural changes to reach the final specification.
+
+Do not unnecessarily replace the entire application.
+
+Prioritize:
+
+1. Functionality
+2. Reliability
+3. Data persistence
+4. Correct access validation
+5. Clean UX
+6. Responsive design
+7. Code quality
+
+When finished, verify that the complete final demonstration flow works.
+
+SMARTLOCK should be in a state where a university professor can open the application and immediately understand:
+
+WHO creates the pass,
+WHO receives the pass,
+HOW access is granted,
+HOW access is denied,
+HOW expiration works,
+HOW revocation works,
+and HOW the simulated smart lock validates access.
+
+The result should feel like a complete final-year academic software project, not an unfinished prototype.

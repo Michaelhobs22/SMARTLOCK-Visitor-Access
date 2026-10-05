@@ -1,1 +1,2 @@
 - [Artifact preview asset paths](artifact-preview-asset-paths.md) — use relative static-asset links under non-root Vite artifact preview paths to avoid duplicated prefixes.
+- [Wouter route state preservation](wouter-route-state-preservation.md) — render stateful route pages as children; inline component wrappers can remount them after data updates.
