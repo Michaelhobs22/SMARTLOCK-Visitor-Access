@@ -127,7 +127,7 @@ h1, h2, h3, p { margin: 0; }
 .pass-avatar { flex: 0 0 35px; width: 35px; height: 35px; border-radius: 11px; background: hsl(211 42% 15%); color: hsl(76 83% 69%); display: grid; place-items: center; font-weight: 800; font-size: 12px; }
 .pass-name { font-weight: 800; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pass-meta { color: hsl(211 14% 43%); font-size: 11px; margin-top: 3px; }
-.pass-actions { display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
+.pass-actions { display: flex; align-items: center; gap: 9px; flex-shrink: 0; flex-wrap: wrap; }
 .badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 99px; padding: 5px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .07em; font-weight: 800; }
 .badge-active { background: hsl(76 83% 69% / .47); color: hsl(145 46% 24%); }
 .badge-used { background: hsl(210 18% 90%); color: hsl(211 14% 43%); }
@@ -146,6 +146,17 @@ h1, h2, h3, p { margin: 0; }
 .activity-copy strong { font-weight: 800; }
 .activity-time { color: hsl(211 14% 43%); font-family: var(--app-font-mono); font-size: 10px; margin-top: 3px; }
 .form-layout { max-width: 840px; display: grid; grid-template-columns: 1fr .72fr; gap: 20px; align-items: start; }
+.pass-detail-grid { max-width: 1000px; display: grid; grid-template-columns: .82fr 1fr; grid-template-areas: "qr info"; gap: 20px; align-items: start; }
+.detail-info { grid-area: info; }
+.detail-qr { grid-area: qr; }
+.detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.detail-list { display: grid; margin-top: 22px; border-top: 1px solid hsl(210 24% 84%); }
+.detail-row { display: flex; justify-content: space-between; gap: 18px; padding: 13px 2px; border-bottom: 1px solid hsl(210 24% 84%); font-size: 12px; }
+.detail-row span { color: hsl(211 14% 43%); }
+.detail-row strong { text-align: right; }
+.detail-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.detail-warning { margin-top: 16px; padding: 12px; border-radius: 10px; background: hsl(5 95% 70% / .15); color: hsl(5 65% 38%); font-size: 12px; line-height: 1.5; }
+.pass-help-card .button { margin-top: 20px; }
 .form-stack { display: grid; gap: 17px; }
 .field { display: grid; gap: 7px; }
 .field label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 800; color: hsl(211 14% 43%); }
@@ -207,7 +218,8 @@ h1, h2, h3, p { margin: 0; }
   .side-rail { width: 212px; flex-basis: 212px; }
   .main-content { padding: 34px 28px 60px; }
   .overview-grid, .lock-grid { grid-template-columns: 1fr; }
-  .form-layout { max-width: none; }
+  .form-layout, .pass-detail-grid { max-width: none; grid-template-columns: 1fr; }
+  .pass-detail-grid { grid-template-areas: "qr" "info"; }
   .qr-card { position: static; }
 }
 @media (max-width: 680px) {
@@ -229,6 +241,7 @@ h1, h2, h3, p { margin: 0; }
   .panel-pad { padding: 18px; }
   .pass-row { align-items: flex-start; flex-direction: column; }
   .pass-actions { width: 100%; justify-content: space-between; }
+  .detail-actions .button { width: 100%; }
   .form-layout { grid-template-columns: 1fr; }
   .option-grid { grid-template-columns: 1fr; }
   .lock-hero { padding: 24px 20px; flex-direction: column; }

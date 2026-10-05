@@ -150,14 +150,14 @@ function Overview({ passes, onRevoke }: { passes: AccessPass[]; onRevoke: (id: s
         <div className="stat-card" data-testid="stat-entries"><div className="stat-value">{used.length}</div><div className="stat-label">Used passes</div></div>
       </div>
       <div className="overview-grid">
-        <section className="panel panel-pad reveal delay-1">
-          <div className="top-row" style={{ marginBottom: 0, alignItems: 'flex-start' }}><div><h2 className="panel-title">Guest passes</h2><p className="panel-kicker">Temporary keys for people you trust.</p></div><Link href="/guest" className="button button-soft" data-testid="link-manage-passes">Manage <ExternalLink className="icon" /></Link></div>
+        <section className="panel panel-pad detail-info reveal delay-1">
+          <div className="top-row" style={{ marginBottom: 0, alignItems: 'flex-start' }}><div><h2 className="panel-title">Guest passes</h2><p className="panel-kicker">Temporary keys for people you trust.</p></div><Link href="/passes" className="button button-soft" data-testid="link-manage-passes">View all passes <ExternalLink className="icon" /></Link></div>
           <div className="pass-list">
             {recent.length === 0 ? <div className="empty" data-testid="empty-passes"><strong>No guest passes yet</strong>Create one when someone is on their way.</div> : recent.map((pass) => {
               const currentStatus = statusFor(pass);
               return <div className="pass-row" key={pass.id} data-testid={`card-pass-${pass.id}`}>
                 <div className="pass-info"><div className="pass-avatar" aria-hidden="true">{initials(pass.visitorName)}</div><div><div className="pass-name" data-testid={`text-visitor-${pass.id}`}>{pass.visitorName}</div><div className="pass-meta">{pass.unit} · Expires {formatExpiry(pass.expiresAt)}</div></div></div>
-                <div className="pass-actions"><span className={`badge badge-${currentStatus}`} data-testid={`status-pass-${pass.id}`}>{currentStatus}</span>{currentStatus === 'active' && <button className="button button-quiet" onClick={() => onRevoke(pass.id)} data-testid={`button-revoke-${pass.id}`}><X className="icon" /> Revoke</button>}</div>
+                <div className="pass-actions"><span className={`badge badge-${currentStatus}`} data-testid={`status-pass-${pass.id}`}>{currentStatus}</span><Link href={`/passes/${pass.id}`} className="button button-quiet" data-testid={`link-manage-pass-${pass.id}`}>Manage <ExternalLink className="icon" /></Link>{currentStatus === 'active' && <button className="button button-quiet" onClick={() => onRevoke(pass.id)} data-testid={`button-revoke-${pass.id}`}><X className="icon" /> Revoke</button>}</div>
               </div>;
               })}
           </div>
@@ -171,26 +171,86 @@ function Overview({ passes, onRevoke }: { passes: AccessPass[]; onRevoke: (id: s
   );
 }
 
+function PassesPage({ passes, onRevoke }: { passes: AccessPass[]; onRevoke: (id: string) => void }) {
+  const sortedPasses = [...passes].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return (
+    <main className="main-content">
+      <div className="top-row reveal">
+        <div><div className="eyebrow">Resident console · Pass management</div><h1 className="page-title">Every guest, individually.</h1><p className="page-subtitle">Open a pass to see that visitor’s own QR code, access code, expiry, and controls.</p></div>
+        <Link href="/guest" className="button button-accent" data-testid="button-create-pass-from-list"><Plus className="icon" /> Create guest pass</Link>
+      </div>
+      <section className="panel panel-pad reveal delay-1">
+        <div className="pass-list all-passes-list">
+          {sortedPasses.length === 0 ? <div className="empty" data-testid="empty-all-passes"><strong>No guest passes yet</strong>Create a pass to generate a visitor-specific QR code.</div> : sortedPasses.map((pass) => {
+            const currentStatus = statusFor(pass);
+            return <div className="pass-row" key={pass.id} data-testid={`managed-pass-${pass.id}`}>
+              <div className="pass-info"><div className="pass-avatar" aria-hidden="true">{initials(pass.visitorName)}</div><div><div className="pass-name">{pass.visitorName}</div><div className="pass-meta">Unit {pass.unit} · {pass.accessType} · Expires {formatExpiry(pass.expiresAt)}</div></div></div>
+              <div className="pass-actions"><span className={`badge badge-${currentStatus}`} data-testid={`managed-status-${pass.id}`}>{currentStatus}</span><Link href={`/passes/${pass.id}`} className="button button-quiet" data-testid={`manage-pass-${pass.id}`}>Manage <ExternalLink className="icon" /></Link>{currentStatus === 'active' && <button className="button button-quiet" onClick={() => onRevoke(pass.id)} data-testid={`revoke-pass-${pass.id}`}><X className="icon" /> Revoke</button>}</div>
+            </div>;
+          })}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function PassDetails({ pass, onRevoke, onCopy }: { pass: AccessPass; onRevoke: (id: string) => void; onCopy: (token: string) => void }) {
+  const currentStatus = statusFor(pass);
+  return (
+    <main className="main-content">
+      <div className="top-row reveal">
+        <div>
+          <div className="eyebrow">Individual guest pass · Unit {pass.unit}</div>
+          <h1 className="page-title">{pass.visitorName}</h1>
+          <p className="page-subtitle">This is the QR code and management page for this visitor’s pass.</p>
+        </div>
+        <Link href="/passes" className="button button-soft" data-testid="link-back-to-passes">Back to all passes</Link>
+      </div>
+      <div className="pass-detail-grid">
+        <section className="panel panel-pad reveal delay-1">
+          <div className="detail-heading">
+            <div>
+              <div className="eyebrow">Pass status</div>
+              <h2 className="panel-title" style={{ marginTop: 8 }}>{pass.visitorName}’s access</h2>
+            </div>
+            <span className={`badge badge-${currentStatus}`} data-testid={`detail-status-${pass.id}`}>{currentStatus}</span>
+          </div>
+          <div className="detail-list">
+            <div className="detail-row"><span>Visitor</span><strong data-testid={`detail-visitor-${pass.id}`}>{pass.visitorName}</strong></div>
+            <div className="detail-row"><span>Unit</span><strong>{pass.unit}</strong></div>
+            <div className="detail-row"><span>Access type</span><strong>{pass.accessType === 'premium' ? 'Premium' : 'Standard'}</strong></div>
+            <div className="detail-row"><span>Created</span><strong>{formatExpiry(pass.createdAt)}</strong></div>
+            <div className="detail-row"><span>Expires</span><strong>{formatExpiry(pass.expiresAt)}</strong></div>
+          </div>
+          <div className="detail-actions">
+            <Link href="/passes" className="button button-soft" data-testid="link-return-overview">Return to all passes</Link>
+            {currentStatus === 'active' && <button className="button button-danger" onClick={() => onRevoke(pass.id)} data-testid={`button-detail-revoke-${pass.id}`}><X className="icon" /> Revoke this pass</button>}
+          </div>
+          {currentStatus !== 'active' && <p className="detail-warning" data-testid={`text-pass-inactive-${pass.id}`}>This pass is {currentStatus} and can no longer be used to enter.</p>}
+        </section>
+        <section className="panel qr-card detail-qr reveal delay-2" data-testid={`card-pass-qr-${pass.id}`}>
+          <div className="eyebrow">SMARTLOCK QR pass</div>
+          <h2 className="panel-title" style={{ marginTop: 8 }}>{pass.visitorName}</h2>
+          <div className="qr-wrap"><QRCodeSVG value={pass.token} size={220} bgColor="#fffdfa" fgColor="#152332" level="Q" title={`QR access pass for ${pass.visitorName}`} data-testid={`img-pass-qr-${pass.id}`} /></div>
+          <div className="token" data-testid={`text-pass-token-${pass.id}`}>{pass.token}</div>
+          {currentStatus === 'active' ? <button className="button button-accent" onClick={() => onCopy(pass.token)} data-testid={`button-copy-pass-${pass.id}`}><Copy className="icon" /> Copy access code</button> : <p className="helper" style={{ marginTop: 12 }}>This QR code is no longer active.</p>}
+        </section>
+      </div>
+    </main>
+  );
+}
+
 function GuestPage({ onCreate, notify }: { onCreate: (name: string, unit: string, type: AccessType) => AccessPass; notify: (message: string) => void }) {
+  const [, setLocation] = useLocation();
   const [visitorName, setVisitorName] = useState('');
   const [unit, setUnit] = useState('4B');
   const [accessType, setAccessType] = useState<AccessType>('standard');
-  const [sponsorStep, setSponsorStep] = useState(false);
-  const [generated, setGenerated] = useState<AccessPass | null>(null);
   const canGenerate = visitorName.trim().length > 1 && unit.trim().length > 0;
   function generate() {
     if (!canGenerate) return;
-    if (accessType === 'standard' && !sponsorStep) {
-      setSponsorStep(true);
-      return;
-    }
-    setGenerated(onCreate(visitorName, unit, accessType));
-    notify('Pass created and ready to share');
-  }
-  async function copyToken() {
-    if (!generated) return;
-    await navigator.clipboard?.writeText(generated.token);
-    notify('Pass token copied');
+    const pass = onCreate(visitorName, unit, accessType);
+    notify(`${pass.visitorName}'s QR pass is ready`);
+    setLocation(`/passes/${pass.id}`);
   }
   return (
     <main className="main-content">
@@ -201,14 +261,17 @@ function GuestPage({ onCreate, notify }: { onCreate: (name: string, unit: string
           <div className="form-stack" style={{ marginTop: 22 }}>
             <div className="field"><label htmlFor="visitor-name">Visitor name</label><input id="visitor-name" value={visitorName} onChange={(event) => setVisitorName(event.target.value)} placeholder="e.g. Sam Rivera" data-testid="input-visitor-name" /></div>
             <div className="field"><label htmlFor="unit-number">Unit</label><input id="unit-number" value={unit} onChange={(event) => setUnit(event.target.value)} placeholder="e.g. 4B" data-testid="input-unit" /></div>
-            <div className="field"><label>Access level</label><div className="option-grid"><button className={`option ${accessType === 'standard' ? 'selected' : ''}`} onClick={() => { setAccessType('standard'); setSponsorStep(false); }} data-testid="button-select-standard"><div className="option-title"><span>Standard</span><span className="option-price">12 hours</span></div><div className="option-copy">A quick sponsor step, then a temporary door pass.</div></button><button className={`option ${accessType === 'premium' ? 'selected' : ''}`} onClick={() => { setAccessType('premium'); setSponsorStep(false); }} data-testid="button-select-premium"><div className="option-title"><span>Premium</span><span className="option-price">48 hours</span></div><div className="option-copy">Skip the sponsor step for longer, uninterrupted access.</div></button></div></div>
-            {accessType === 'standard' && sponsorStep && <div className="step-card reveal" data-testid="card-sponsor-step"><div className="step-top"><div><div className="step-number">SPONSOR STEP · COMPLETE</div><h3>Thanks for supporting secure entry.</h3></div><ShieldCheck className="icon" /></div><p>This short sponsor message keeps Standard passes free. No sign-up, payment, or personal data is required.</p></div>}
-            <div className="helper">Passes expire automatically and can be revoked anytime from the overview.</div>
-            <button className="button button-primary" onClick={generate} disabled={!canGenerate} data-testid="button-generate-pass">{accessType === 'standard' && !sponsorStep ? 'Continue to sponsor step' : 'Generate pass'} <QrCode className="icon" /></button>
+            <div className="field"><label>Access level</label><div className="option-grid"><button className={`option ${accessType === 'standard' ? 'selected' : ''}`} onClick={() => setAccessType('standard')} data-testid="button-select-standard"><div className="option-title"><span>Standard</span><span className="option-price">12 hours</span></div><div className="option-copy">Free access with a sponsor message.</div></button><button className={`option ${accessType === 'premium' ? 'selected' : ''}`} onClick={() => setAccessType('premium')} data-testid="button-select-premium"><div className="option-title"><span>Premium</span><span className="option-price">48 hours</span></div><div className="option-copy">Skip the sponsor step for longer, uninterrupted access.</div></button></div></div>
+            {accessType === 'standard' && <div className="step-card" data-testid="card-sponsor-step"><div className="step-top"><div><div className="step-number">SPONSORED · DEMO</div><h3>Free access, supported by a sponsor.</h3></div><ShieldCheck className="icon" /></div><p>Ad playback is simulated in this demo. Generate the QR pass below to continue.</p></div>}
+            <div className="helper">Each pass opens its own QR code and management page. You can revoke it from that page or the overview.</div>
+            <button className="button button-primary" onClick={generate} disabled={!canGenerate} data-testid="button-generate-pass">Generate QR pass <QrCode className="icon" /></button>
           </div>
         </section>
-        <section className="panel qr-card reveal delay-2" data-testid="card-generated-pass">
-          {generated ? <><div className="eyebrow">Pass ready</div><h2 className="panel-title" style={{ marginTop: 8 }}>{generated.visitorName}'s door pass</h2><div className="qr-wrap"><QRCodeSVG value={generated.token} size={220} bgColor="#fffdfa" fgColor="#152332" level="Q" title={`QR code for ${generated.visitorName}'s access pass`} data-testid="img-pass-qr" /></div><div className="token" data-testid="text-pass-token">{generated.token}</div><p className="helper" style={{ marginTop: 11 }}>Valid until {formatExpiry(generated.expiresAt)}</p><button className="button button-accent" onClick={copyToken} data-testid="button-copy-token"><Copy className="icon" /> Copy token</button><button className="button button-soft" onClick={() => { setGenerated(null); setVisitorName(''); setSponsorStep(false); }} data-testid="button-create-another">Create another pass</button></> : <div className="empty" style={{ border: 0, padding: '40px 8px' }}><QrCode style={{ width: 34, height: 34, margin: '0 auto 15px', color: 'hsl(210 80% 57%)' }} /><strong>Your QR pass will appear here</strong>Fill in the details to create a shareable entry pass.</div>}
+        <section className="panel panel-pad pass-help-card reveal delay-2">
+          <div className="eyebrow">One visitor, one pass</div>
+          <h2 className="panel-title" style={{ marginTop: 8 }}>Your QR appears next.</h2>
+          <p className="panel-kicker">As soon as you generate a pass, SMARTLOCK opens that visitor’s individual QR code, access code, expiry, and management controls.</p>
+          <Link href="/passes" className="button button-soft" data-testid="link-view-all-passes">View all passes</Link>
         </section>
       </div>
     </main>
@@ -239,9 +302,19 @@ function RouterApp() {
   const [location] = useLocation();
   const [passes, setPasses] = useState<AccessPass[]>(loadPasses);
   const [toast, setToast] = useState('');
+  const passId = location.startsWith('/passes/') ? decodeURIComponent(location.slice('/passes/'.length)) : '';
+  const selectedPass = passes.find((pass) => pass.id === passId);
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(passes)); }, [passes]);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(''), 2800); return () => window.clearTimeout(timer); }, [toast]);
   const notify = (message: string) => setToast(message);
+  const onCopy = async (token: string) => {
+    try {
+      await navigator.clipboard.writeText(token);
+      notify('Access code copied');
+    } catch {
+      notify('Clipboard unavailable. Select the access code to copy it.');
+    }
+  };
   const onCreate = (name: string, unit: string, type: AccessType) => {
     const pass = createPass(name, unit, type);
     setPasses((current) => [pass, ...current]);
@@ -259,7 +332,7 @@ function RouterApp() {
     notify('Entry verified');
     return { ok: true, pass: { ...pass, status: 'used' as PassStatus } };
   };
-  const page = useMemo(() => <Switch><Route path="/" component={() => <Overview passes={passes} onRevoke={onRevoke} />} /><Route path="/guest" component={() => <GuestPage onCreate={onCreate} notify={notify} />} /><Route path="/lock" component={() => <LockPage onVerify={onVerify} />} /><Route component={NotFound} /></Switch>, [passes, location]);
+  const page = useMemo(() => <Switch><Route path="/" component={() => <Overview passes={passes} onRevoke={onRevoke} />} /><Route path="/passes" component={() => <PassesPage passes={passes} onRevoke={onRevoke} />} /><Route path="/passes/:id" component={() => selectedPass ? <PassDetails pass={selectedPass} onRevoke={onRevoke} onCopy={onCopy} /> : <NotFound />} /><Route path="/guest" component={() => <GuestPage onCreate={onCreate} notify={notify} />} /><Route path="/lock" component={() => <LockPage onVerify={onVerify} />} /><Route component={NotFound} /></Switch>, [passes, location]);
   return <><AppShell currentPath={location}>{page}</AppShell>{toast && <div className="toast" role="status" data-testid="toast-message">{toast}</div>}</>;
 }
 
