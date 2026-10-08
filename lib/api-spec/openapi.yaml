@@ -10,6 +10,10 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: passes
+    description: Resident-owned visitor pass lifecycle
+  - name: visitor
+    description: Public access to a shared visitor pass
 paths:
   /healthz:
     get:
@@ -24,7 +28,189 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /passes:
+    get:
+      operationId: listPasses
+      tags: [passes]
+      summary: List the signed-in resident's passes
+      security:
+        - ClerkSession: []
+      responses:
+        "200":
+          description: Passes owned by the current resident
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AccessPass"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createPass
+      tags: [passes]
+      summary: Create a time-limited visitor pass
+      security:
+        - ClerkSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PassInput"
+      responses:
+        "201":
+          description: Created pass
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessPass"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      operationId: resetPasses
+      tags: [passes]
+      summary: Delete all passes belonging to the signed-in resident
+      description: Permanently deletes this resident's passes after an explicit in-app confirmation.
+      security:
+        - ClerkSession: []
+      responses:
+        "204":
+          description: All passes deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /passes/import-legacy:
+    post:
+      operationId: importLegacyPasses
+      tags: [passes]
+      summary: Import passes from the browser-only demo
+      description: Imports only passes in the legacy generated-code format. The authenticated resident owns every imported pass.
+      security:
+        - ClerkSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LegacyPassImport"
+      responses:
+        "200":
+          description: Number of legacy passes imported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyPassImportResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /passes/verify:
+    post:
+      operationId: verifyPass
+      tags: [passes]
+      summary: Verify and consume a pass once
+      description: Validates an active, unexpired pass and atomically marks it used.
+      security:
+        - ClerkSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PassVerificationInput"
+      responses:
+        "200":
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PassVerificationResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /passes/{id}/revoke:
+    post:
+      operationId: revokePass
+      tags: [passes]
+      summary: Revoke an active pass owned by the signed-in resident
+      security:
+        - ClerkSession: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Revoked pass
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessPass"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The pass is no longer active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /public-passes/lookup:
+    post:
+      operationId: lookupPublicPass
+      tags: [visitor]
+      summary: Load a pass using its share link
+      description: Returns only visitor-facing fields. The share identifier is sent in the request body so it is not recorded in request URLs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublicPassLookup"
+      responses:
+        "200":
+          description: Public pass details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicPass"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
+  securitySchemes:
+    ClerkSession:
+      type: apiKey
+      in: cookie
+      name: __session
+  responses:
+    BadRequest:
+      description: The request did not match the API contract
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: A signed-in resident account is required
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: The pass was not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +219,178 @@ components:
           type: string
       required:
         - status
+    AccessPass:
+      type: object
+      required: [id, visitorName, unit, accessType, token, createdAt, expiresAt, status, notes, usedAt, revokedAt]
+      properties:
+        id:
+          type: string
+        visitorName:
+          type: string
+        unit:
+          type: string
+        accessType:
+          type: string
+          enum: [standard, premium]
+        token:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, used, revoked]
+        notes:
+          type: [string, "null"]
+        usedAt:
+          type: [string, "null"]
+          format: date-time
+        revokedAt:
+          type: [string, "null"]
+          format: date-time
+    PublicPass:
+      type: object
+      required: [id, visitorName, unit, accessType, token, createdAt, expiresAt, status, usedAt, revokedAt]
+      properties:
+        id:
+          type: string
+        visitorName:
+          type: string
+        unit:
+          type: string
+        accessType:
+          type: string
+          enum: [standard, premium]
+        token:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, used, revoked]
+        usedAt:
+          type: [string, "null"]
+          format: date-time
+        revokedAt:
+          type: [string, "null"]
+          format: date-time
+    PassInput:
+      type: object
+      required: [visitorName, unit, accessType, expiresAt]
+      properties:
+        visitorName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        unit:
+          type: string
+          minLength: 1
+          maxLength: 24
+        accessType:
+          type: string
+          enum: [standard, premium]
+        expiresAt:
+          type: string
+          format: date-time
+        notes:
+          type: string
+          maxLength: 240
+    LegacyPassImport:
+      type: object
+      required: [passes]
+      properties:
+        passes:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/LegacyPass"
+    LegacyPass:
+      type: object
+      required: [id, visitorName, unit, accessType, token, createdAt, expiresAt, status]
+      properties:
+        id:
+          type: string
+          pattern: "^pass-SL-[A-Fa-f0-9]{20}$"
+        visitorName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        unit:
+          type: string
+          maxLength: 24
+        accessType:
+          type: string
+          enum: [standard, premium]
+        token:
+          type: string
+          pattern: "^SL-[A-Fa-f0-9]{20}$"
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, used, revoked]
+        notes:
+          type: [string, "null"]
+          maxLength: 240
+        usedAt:
+          type: [string, "null"]
+          format: date-time
+        revokedAt:
+          type: [string, "null"]
+          format: date-time
+    LegacyPassImportResult:
+      type: object
+      required: [importedCount]
+      properties:
+        importedCount:
+          type: integer
+          minimum: 0
+    PassVerificationInput:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 128
+    PassVerificationResult:
+      type: object
+      required: [ok, reason, pass, accessTime]
+      properties:
+        ok:
+          type: boolean
+        reason:
+          type: [string, "null"]
+        pass:
+          oneOf:
+            - $ref: "#/components/schemas/AccessPass"
+            - type: "null"
+        accessTime:
+          type: [string, "null"]
+          format: date-time
+    PublicPassLookup:
+      type: object
+      required: [passId]
+      properties:
+        passId:
+          type: string
+          minLength: 1
+          maxLength: 128
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
 

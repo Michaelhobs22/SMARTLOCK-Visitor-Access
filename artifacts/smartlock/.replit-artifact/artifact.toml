@@ -1,7 +1,7 @@
 kind = "web"
 previewPath = "/smartlock/"
 title = "SMARTLOCK"
-description = "A QR-based residential visitor access app. Residents manage temporary guest passes, visitors generate a QR access pass through free or premium flow, and a simulated smart lock validates entry."
+description = "An authenticated residential visitor-access app. Residents create, share, and manage temporary QR passes across devices; a simulated reader checks pass status but does not control physical locks."
 version = "1.0.0"
 id = "artifacts/smartlock"
 router = "path"

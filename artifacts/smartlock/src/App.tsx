@@ -3,32 +3,34 @@ import { Link, Redirect, Route, Switch, useLocation, Router as WouterRouter } fr
 import { ClerkProvider, Show, SignIn, SignUp, useAuth, useClerk, useUser } from '@clerk/react';
 import { publishableKeyFromHost } from '@clerk/react/internal';
 import { shadcn } from '@clerk/themes';
-import { Copy, DoorOpen, Download, ExternalLink, Info, LayoutDashboard, LockKeyhole, LogOut, Plus, QrCode, RotateCcw, Search, Share2, ShieldCheck, UserRoundPlus, X } from 'lucide-react';
+import { Camera, Copy, DoorOpen, Download, ExternalLink, Info, LayoutDashboard, LockKeyhole, LogOut, Plus, QrCode, RotateCcw, Search, Share2, ShieldCheck, UserRoundPlus, X } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import {
+  getListPassesQueryKey,
+  useCreatePass,
+  useImportLegacyPasses,
+  useListPasses,
+  useLookupPublicPass,
+  useResetPasses,
+  useRevokePass,
+  useVerifyPass,
+} from '@workspace/api-client-react';
+import type { AccessPass as ApiAccessPass, LegacyPass, PassInput, PublicPass as ApiPublicPass } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { QrCameraScanner } from '@/components/qr-camera-scanner';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 
-type AccessType = 'standard' | 'premium';
-type PassStatus = 'active' | 'used' | 'revoked';
+type AccessType = PassInput['accessType'];
 type DisplayPassStatus = PassStatus | 'expired';
-type AccessPass = {
-  id: string;
-  visitorName: string;
-  unit: string;
-  accessType: AccessType;
-  token: string;
-  createdAt: string;
-  expiresAt: string;
-  status: PassStatus;
-  notes?: string;
-  usedAt?: string;
-  revokedAt?: string;
-};
+type AccessPass = ApiAccessPass;
+type PublicPass = ApiPublicPass;
+type PassStatus = AccessPass['status'];
 
 const STORAGE_KEY = 'smartlock-access-passes';
+const LEGACY_IMPORT_COMPLETE_KEY = 'smartlock-legacy-pass-import-complete';
 const queryClient = new QueryClient();
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 const clerkPubKey = publishableKeyFromHost(window.location.hostname, import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
@@ -91,76 +93,45 @@ const clerkAppearance = {
   },
 };
 
-function makeToken(existing: AccessPass[] = []) {
-  let token = '';
-  do {
-    const bytes = new Uint8Array(10);
-    crypto.getRandomValues(bytes);
-    token = `SL-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
-  } while (existing.some((pass) => pass.token.toUpperCase() === token));
-  return token;
-}
-
-function createPass(visitorName: string, unit: string, accessType: AccessType, expiresAt: Date, notes: string, existing: AccessPass[]): AccessPass {
-  const createdAt = new Date();
-  const token = makeToken(existing);
-  return {
-    id: `pass-${token}`,
-    visitorName: visitorName.trim(),
-    unit: unit.trim().toUpperCase(),
-    accessType,
-    token,
-    createdAt: createdAt.toISOString(),
-    expiresAt: expiresAt.toISOString(),
-    status: 'active',
-    notes: notes.trim() || undefined,
-  };
-}
-
-function seedPasses(): AccessPass[] {
-  const now = Date.now();
-  return [
-    { id: 'seed-maya', visitorName: 'Maya Chen', unit: '4B', accessType: 'premium', token: 'MAYA4B8A21D4', createdAt: new Date(now - 1000 * 60 * 42).toISOString(), expiresAt: new Date(now + 1000 * 60 * 60 * 26).toISOString(), status: 'active' },
-    { id: 'seed-jon', visitorName: 'Jon Bell', unit: '4B', accessType: 'standard', token: 'JON4B2F901A', createdAt: new Date(now - 1000 * 60 * 60 * 19).toISOString(), expiresAt: new Date(now - 1000 * 60 * 60 * 7).toISOString(), status: 'used', usedAt: new Date(now - 1000 * 60 * 60 * 18).toISOString() },
-    { id: 'seed-ari', visitorName: 'Ari Patel', unit: '4B', accessType: 'standard', token: 'ARI4B91C0EF', createdAt: new Date(now - 1000 * 60 * 60 * 4).toISOString(), expiresAt: new Date(now + 1000 * 60 * 60 * 8).toISOString(), status: 'revoked', revokedAt: new Date(now - 1000 * 60 * 60).toISOString() },
-  ];
-}
-
-function migratePasses(value: unknown): AccessPass[] {
+function legacyPassesFrom(value: unknown): LegacyPass[] {
   if (!Array.isArray(value)) return [];
-  return value.flatMap((item): AccessPass[] => {
+
+  return value.flatMap((item): LegacyPass[] => {
     if (!item || typeof item !== 'object') return [];
-    const pass = item as Partial<AccessPass>;
-    if (typeof pass.id !== 'string' || typeof pass.visitorName !== 'string' || typeof pass.token !== 'string') return [];
-    if (typeof pass.createdAt !== 'string' || typeof pass.expiresAt !== 'string' || !Number.isFinite(Date.parse(pass.expiresAt))) return [];
+    const pass = item as Partial<LegacyPass>;
+    if (
+      typeof pass.id !== 'string' ||
+      typeof pass.token !== 'string' ||
+      !/^SL-[A-F0-9]{20}$/i.test(pass.token) ||
+      pass.id !== `pass-${pass.token}` ||
+      typeof pass.visitorName !== 'string' ||
+      !pass.visitorName.trim() ||
+      typeof pass.createdAt !== 'string' ||
+      typeof pass.expiresAt !== 'string' ||
+      !Number.isFinite(Date.parse(pass.createdAt)) ||
+      !Number.isFinite(Date.parse(pass.expiresAt))
+    ) {
+      return [];
+    }
+
     return [{
       id: pass.id,
-      visitorName: pass.visitorName,
-      unit: typeof pass.unit === 'string' ? pass.unit : '',
+      visitorName: pass.visitorName.trim().slice(0, 80),
+      unit: typeof pass.unit === 'string' ? pass.unit.trim().slice(0, 24) : '',
       accessType: pass.accessType === 'premium' ? 'premium' : 'standard',
       token: pass.token,
       createdAt: pass.createdAt,
       expiresAt: pass.expiresAt,
-      status: pass.status === 'used' || pass.status === 'revoked' ? pass.status : 'active',
-      notes: typeof pass.notes === 'string' ? pass.notes : undefined,
-      usedAt: typeof pass.usedAt === 'string' ? pass.usedAt : undefined,
-      revokedAt: typeof pass.revokedAt === 'string' ? pass.revokedAt : undefined,
+      status: pass.revokedAt || pass.status === 'revoked'
+        ? 'revoked'
+        : pass.usedAt || pass.status === 'used'
+          ? 'used'
+          : 'active',
+      notes: typeof pass.notes === 'string' ? pass.notes.slice(0, 240) : null,
+      usedAt: typeof pass.usedAt === 'string' && Number.isFinite(Date.parse(pass.usedAt)) ? pass.usedAt : null,
+      revokedAt: typeof pass.revokedAt === 'string' && Number.isFinite(Date.parse(pass.revokedAt)) ? pass.revokedAt : null,
     }];
   });
-}
-
-function loadPasses(): AccessPass[] {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored !== null) {
-    try {
-      return migratePasses(JSON.parse(stored));
-    } catch {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-  }
-  const seeded = seedPasses();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
-  return seeded;
 }
 
 function formatExpiry(value: string) {
@@ -181,18 +152,6 @@ function statusFor(pass: AccessPass, now = Date.now()): DisplayPassStatus {
   if (pass.usedAt || pass.status === 'used') return 'used';
   if (new Date(pass.expiresAt).getTime() <= now) return 'expired';
   return 'active';
-}
-
-function validateAccess(rawCode: string, passes: AccessPass[], now = Date.now()): { ok: true; pass: AccessPass; accessTime: string } | { ok: false; reason: string } {
-  const code = rawCode.trim().toUpperCase();
-  if (!code) return { ok: false, reason: 'Please enter an access code.' };
-  const pass = passes.find((item) => item.token.toUpperCase() === code);
-  if (!pass) return { ok: false, reason: 'Access denied — invalid visitor credential.' };
-  const status = statusFor(pass, now);
-  if (status === 'revoked') return { ok: false, reason: 'Access denied — this visitor pass has been revoked.' };
-  if (status === 'used') return { ok: false, reason: 'Access denied — this visitor pass has already been used.' };
-  if (status === 'expired') return { ok: false, reason: 'Access denied — this visitor pass has expired.' };
-  return { ok: true, pass, accessTime: new Date(now).toISOString() };
 }
 
 function formatRemaining(expiresAt: string, now: number) {
@@ -230,12 +189,12 @@ function PublicLandingPage() {
         <section className="landing-copy">
           <div className="eyebrow">RESIDENT ACCESS · MADE SIMPLE</div>
           <h1>Give guests a pass.<br /><span>Keep control.</span></h1>
-          <p>Create a unique, time-limited visitor pass, then verify it at a simulated entry reader. Sign in to manage your resident console.</p>
+          <p>Create a unique, time-limited visitor pass, then verify it at a simulated entry reader. Sign in to manage account-backed passes.</p>
           <div className="landing-actions">
             <Link href="/sign-up" className="button button-accent" data-testid="button-landing-create-account">Create a resident account <ExternalLink className="icon" /></Link>
             <Link href="/sign-in" className="button button-soft" data-testid="button-landing-sign-in">I already have an account</Link>
           </div>
-          <div className="landing-assurance"><ShieldCheck className="icon" /><span>Accounts use secure Clerk sign-in. Pass records in this demo remain in the current browser.</span></div>
+          <div className="landing-assurance"><ShieldCheck className="icon" /><span>Secure resident sign-in. Pass records are private to your account and sync across devices.</span></div>
         </section>
         <aside className="landing-visual" aria-label="SMARTLOCK visitor pass preview">
           <div className="landing-orbit landing-orbit-one" /><div className="landing-orbit landing-orbit-two" />
@@ -250,7 +209,7 @@ function PublicLandingPage() {
           <div className="landing-visual-caption"><span className="status-dot" /> Access stays clear from issue to entry.</div>
         </aside>
       </main>
-      <footer className="landing-footer">This is a demonstration. Visitor passes stay in this browser and do not sync across devices or control a physical lock.</footer>
+      <footer className="landing-footer">Visitor records sync to your account. Door control is simulated; this app is not connected to a physical lock.</footer>
     </div>
   );
 }
@@ -262,7 +221,7 @@ function PublicVisitorShell({ children }: { children: ReactNode }) {
         <Link href="/" className="brand" data-testid="link-visitor-brand"><span className="brand-mark" aria-hidden="true" /><span className="brand-name">SMARTLOCK</span></Link>
         <div className="visitor-header-actions"><span>Visitor pass</span><Link href="/sign-in" className="visitor-signin" data-testid="link-visitor-sign-in">Resident sign in</Link></div>
       </header>
-      <div className="visitor-demo-note">This shared pass page is a demo. Passes are stored in the resident’s browser, so this link may not load on another device.</div>
+      <div className="visitor-demo-note">Anyone with this link can view the visitor pass. Keep it private and do not forward it beyond your guest.</div>
       {children}
     </div>
   );
@@ -298,7 +257,7 @@ function AppShell({ children, currentPath, account, onSignOut }: { children: Rea
             <div className="account-copy"><strong>{account.name || 'Resident'}</strong><span>{account.email}</span></div>
             <button className="account-signout" onClick={onSignOut} aria-label="Sign out" title="Sign out" data-testid="button-sign-out"><LogOut className="icon" /></button>
           </div>
-          <div className="rail-status"><span className="status-dot" /><span><strong>Demo mode</strong><br />Passes stay on this device</span></div>
+          <div className="rail-status"><span className="status-dot" /><span><strong>Account synced</strong><br />Door control simulated</span></div>
         </div>
       </aside>
       <div className="main-area">
@@ -348,7 +307,7 @@ function Overview({ passes, onRevoke, onCopy }: { passes: AccessPass[]; onRevoke
   return (
     <main className="main-content">
       <div className="top-row reveal">
-        <div><div className="eyebrow">{formatToday()} · Unit 4B</div><h1 className="page-title">Your access, at a glance.</h1><p className="page-subtitle">Issue a temporary pass in seconds. Your keys stay yours, and every entry leaves a clear trail.</p></div>
+         <div><div className="eyebrow">{formatToday()} · Resident access</div><h1 className="page-title">Your access, at a glance.</h1><p className="page-subtitle">Issue a temporary pass in seconds. Your passes are account-scoped, and every verification is recorded.</p></div>
         <button className="button button-accent" onClick={() => setLocation('/guest')} data-testid="button-create-pass"><Plus className="icon" /> Create guest pass</button>
       </div>
       <div className="stat-strip reveal delay-1">
@@ -464,16 +423,18 @@ function PassDetails({ pass, onRevoke, onCopy, onShare, now, canManage }: { pass
   );
 }
 
-function GuestPage({ onCreate, notify }: { onCreate: (name: string, unit: string, type: AccessType, expiresAt: Date, notes: string) => AccessPass; notify: (message: string) => void }) {
+function GuestPage({ onCreate, notify }: { onCreate: (name: string, unit: string, type: AccessType, expiresAt: Date, notes: string) => Promise<AccessPass>; notify: (message: string) => void }) {
   const [, setLocation] = useLocation();
   const [visitorName, setVisitorName] = useState('');
-  const [unit, setUnit] = useState('4B');
+  const [unit, setUnit] = useState('');
   const [accessType, setAccessType] = useState<AccessType>('standard');
   const [duration, setDuration] = useState('4h');
   const [customExpiration, setCustomExpiration] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
-  function generate() {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  async function generate() {
+    if (isSubmitting) return;
     if (!visitorName.trim()) {
       setError('Please enter the guest name.');
       return;
@@ -489,9 +450,16 @@ function GuestPage({ onCreate, notify }: { onCreate: (name: string, unit: string
       return;
     }
     setError('');
-    const pass = onCreate(visitorName, unit, accessType, expiresAt, notes);
-    notify(`${pass.visitorName}'s QR pass is ready`);
-    setLocation(`/passes/${pass.id}`);
+    setIsSubmitting(true);
+    try {
+      const pass = await onCreate(visitorName, unit, accessType, expiresAt, notes);
+      notify(`${pass.visitorName}'s QR pass is ready`);
+      setLocation(`/passes/${pass.id}`);
+    } catch {
+      setError('The pass could not be saved. Check your connection and try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   }
   return (
     <main className="main-content">
@@ -500,8 +468,8 @@ function GuestPage({ onCreate, notify }: { onCreate: (name: string, unit: string
         <section className="panel panel-pad reveal delay-1">
           <div className="eyebrow">01 · Pass details</div><h2 className="panel-title" style={{ marginTop: 8 }}>Who is coming by?</h2>
           <div className="form-stack" style={{ marginTop: 22 }}>
-            <div className="field"><label htmlFor="visitor-name">Visitor name</label><input id="visitor-name" value={visitorName} onChange={(event) => { setVisitorName(event.target.value); setError(''); }} placeholder="e.g. Sam Rivera" data-testid="input-visitor-name" /></div>
-            <div className="field"><label htmlFor="unit-number">Unit</label><input id="unit-number" value={unit} onChange={(event) => { setUnit(event.target.value); setError(''); }} placeholder="e.g. 4B" data-testid="input-unit" /></div>
+            <div className="field"><label htmlFor="visitor-name">Visitor name</label><input id="visitor-name" maxLength={80} value={visitorName} onChange={(event) => { setVisitorName(event.target.value); setError(''); }} placeholder="e.g. Sam Rivera" data-testid="input-visitor-name" /></div>
+            <div className="field"><label htmlFor="unit-number">Unit</label><input id="unit-number" maxLength={24} value={unit} onChange={(event) => { setUnit(event.target.value); setError(''); }} placeholder="e.g. 4B" data-testid="input-unit" /></div>
             <div className="field"><label>Pass type</label><div className="option-grid"><button type="button" className={`option ${accessType === 'standard' ? 'selected' : ''}`} aria-pressed={accessType === 'standard'} onClick={() => setAccessType('standard')} data-testid="button-select-standard"><div className="option-title"><span>Standard</span><span className="option-price">Sponsor demo</span></div><div className="option-copy">Includes a demonstration sponsor step. No real ad network.</div></button><button type="button" className={`option premium-option ${accessType === 'premium' ? 'selected' : ''}`} aria-pressed={accessType === 'premium'} onClick={() => setAccessType('premium')} data-testid="button-select-premium"><div className="option-title"><span>Premium</span><span className="option-price">Premium demo</span></div><div className="option-copy">Visually distinct pass type; skips the sponsor demonstration. No payment is taken.</div></button></div></div>
             {accessType === 'standard' && <div className="step-card" data-testid="card-sponsor-step"><div className="step-top"><div><div className="step-number">SPONSOR STEP · DEMONSTRATION ONLY</div><h3>Standard pass sponsor message</h3></div><ShieldCheck className="icon" /></div><p>This project demonstrates a sponsor-supported flow. No advertisement is played or verified.</p></div>}
             <div className="field"><label htmlFor="pass-duration">Access duration</label><select id="pass-duration" value={duration} onChange={(event) => setDuration(event.target.value)} data-testid="select-expiration"><option value="30m">30 minutes</option><option value="1h">1 hour</option><option value="4h">4 hours</option><option value="12h">12 hours</option><option value="24h">24 hours</option><option value="custom">Custom expiration</option></select></div>
@@ -509,7 +477,7 @@ function GuestPage({ onCreate, notify }: { onCreate: (name: string, unit: string
             <div className="field"><label htmlFor="visitor-notes">Purpose / notes <span className="optional-label">Optional</span></label><textarea id="visitor-notes" value={notes} maxLength={240} onChange={(event) => setNotes(event.target.value)} placeholder="e.g. Delivering a package" data-testid="input-pass-notes" /></div>
             <div className="helper">Each pass opens its own QR code and management page. You can revoke it from that page or the overview.</div>
             {error && <p className="form-error" role="alert" data-testid="pass-form-error">{error}</p>}
-            <button className="button button-primary" onClick={generate} data-testid="button-generate-pass">Generate QR pass <QrCode className="icon" /></button>
+            <button className="button button-primary" onClick={generate} disabled={isSubmitting} data-testid="button-generate-pass">{isSubmitting ? 'Saving pass…' : 'Generate QR pass'} <QrCode className="icon" /></button>
           </div>
         </section>
         <section className="panel panel-pad pass-help-card reveal delay-2">
@@ -527,27 +495,37 @@ type VerificationResult =
   | { ok: true; pass: AccessPass; accessTime: string }
   | { ok: false; reason: string };
 
-function LockPage({ onVerify }: { onVerify: (token: string) => VerificationResult }) {
+function LockPage({ onVerify }: { onVerify: (token: string) => Promise<VerificationResult> }) {
   const [sensorActive, setSensorActive] = useState(false);
   const [token, setToken] = useState('');
   const [result, setResult] = useState<VerificationResult | null>(null);
-  function verify() {
-    if (!sensorActive) return;
-    setResult(onVerify(token));
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  async function verify() {
+    if (!sensorActive || isVerifying) return;
+    setIsVerifying(true);
+    try {
+      setResult(await onVerify(token));
+    } catch {
+      setResult({ ok: false, reason: 'Unable to verify this pass. Check your connection and try again.' });
+    } finally {
+      setIsVerifying(false);
+    }
   }
   return (
     <main className="main-content">
       <section className="lock-hero reveal"><div><div className="eyebrow">Entry point · Door 01</div><h1 className="page-title">SMARTLOCK</h1><p className="lock-copy">SECURE ACCESS · This simulated reader checks a visitor code against the resident’s pass list. It does not connect to a physical lock.</p></div><div className="sensor-pill">{sensorActive ? 'Reader active' : 'Reader idle'}</div></section>
       <div className="lock-grid">
-        <section className="panel panel-pad sensor-panel reveal delay-1"><div><div className="eyebrow">01 · Sensor</div><div className={`sensor-graphic ${sensorActive ? 'active' : ''}`}><div className="sensor-core"><LockKeyhole className="icon" /></div></div><div className="sensor-status" data-testid="status-sensor">{sensorActive ? 'Ready for a pass' : 'Sensor is idle'}</div><div className="sensor-detail">Activate the simulated reader to begin.</div></div><button className={`button ${sensorActive ? 'button-soft' : 'button-accent'}`} onClick={() => { setSensorActive((value) => !value); setResult(null); }} data-testid="button-activate-sensor">{sensorActive ? 'Reset sensor' : 'Activate sensor'}</button></section>
-        <section className="panel panel-pad verify-panel reveal delay-2"><div className="verify-title"><div className="verify-icon"><QrCode className="icon" /></div><div><div className="eyebrow">02 · Pass check</div><h2 className="panel-title" style={{ marginTop: 3 }}>Enter access code</h2></div></div><div className="verify-form"><input aria-label="Visitor access code" autoComplete="off" value={token} onChange={(event) => { setToken(event.target.value.toUpperCase()); setResult(null); }} onKeyDown={(event) => { if (event.key === 'Enter') verify(); }} placeholder="e.g. SL-3A7F..." disabled={!sensorActive} data-testid="input-pass-token" /><button className="button button-primary" onClick={verify} disabled={!sensorActive} data-testid="button-verify-token">Unlock Door <DoorOpen className="icon" /></button></div><p className="verify-note">A valid code unlocks this simulation once, then the pass is marked USED. Camera QR scanning is unavailable; enter the code printed beside the QR.</p>{result && <div className={`result ${result.ok ? 'granted' : 'denied'}`} data-testid={`status-verification-${result.ok ? 'granted' : 'denied'}`}>{result.ok ? <DoorOpen className="icon" /> : <ShieldCheck className="icon" />}<div><h3>{result.ok ? 'ACCESS GRANTED' : 'ACCESS DENIED'}</h3>{result.ok ? <><p>Door unlocked successfully in this simulation.</p><dl className="access-result-details"><div><dt>Guest</dt><dd>{result.pass.visitorName} · Unit {result.pass.unit}</dd></div><div><dt>Pass type</dt><dd>{result.pass.accessType === 'premium' ? 'Premium' : 'Standard'}</dd></div><div><dt>Access time</dt><dd>{formatExpiry(result.accessTime)}</dd></div><div><dt>Expiration</dt><dd>{formatExpiry(result.pass.expiresAt)}</dd></div></dl><p className="used-confirmation">This single-use pass is now marked USED.</p></> : <p>{result.reason}</p>}</div></div>}</section>
+        <section className="panel panel-pad sensor-panel reveal delay-1"><div><div className="eyebrow">01 · Sensor</div><div className={`sensor-graphic ${sensorActive ? 'active' : ''}`}><div className="sensor-core"><LockKeyhole className="icon" /></div></div><div className="sensor-status" data-testid="status-sensor">{sensorActive ? 'Ready for a pass' : 'Sensor is idle'}</div><div className="sensor-detail">Activate the simulated reader to begin.</div></div><button className={`button ${sensorActive ? 'button-soft' : 'button-accent'}`} onClick={() => { setSensorActive((value) => !value); setResult(null); setScannerOpen(false); }} data-testid="button-activate-sensor">{sensorActive ? 'Reset sensor' : 'Activate sensor'}</button></section>
+        <section className="panel panel-pad verify-panel reveal delay-2"><div className="verify-title"><div className="verify-icon"><QrCode className="icon" /></div><div><div className="eyebrow">02 · Pass check</div><h2 className="panel-title" style={{ marginTop: 3 }}>Enter access code</h2></div></div><div className="verify-form"><input aria-label="Visitor access code" autoComplete="off" value={token} onChange={(event) => { setToken(event.target.value.toUpperCase()); setResult(null); }} onKeyDown={(event) => { if (event.key === 'Enter') void verify(); }} placeholder="e.g. SL-3A7F..." disabled={!sensorActive || isVerifying} data-testid="input-pass-token" /><button className="button button-primary" onClick={() => void verify()} disabled={!sensorActive || isVerifying} data-testid="button-verify-token">{isVerifying ? 'Checking…' : 'Unlock Door'} <DoorOpen className="icon" /></button></div>{sensorActive && <button className="button button-soft camera-scan-button" onClick={() => setScannerOpen(true)} disabled={isVerifying}><Camera className="icon" /> Scan QR with camera</button>}{scannerOpen && <QrCameraScanner onDetected={(value) => { setToken(value.trim().toUpperCase()); setResult(null); setScannerOpen(false); }} onClose={() => setScannerOpen(false)} />}<p className="verify-note">This simulated reader checks your account’s pass records. A valid code can be used once; it does not operate a physical lock.</p>{result && <div className={`result ${result.ok ? 'granted' : 'denied'}`} data-testid={`status-verification-${result.ok ? 'granted' : 'denied'}`}>{result.ok ? <DoorOpen className="icon" /> : <ShieldCheck className="icon" />}<div><h3>{result.ok ? 'ACCESS GRANTED' : 'ACCESS DENIED'}</h3>{result.ok ? <><p>Access was verified in this simulation.</p><dl className="access-result-details"><div><dt>Guest</dt><dd>{result.pass.visitorName} · Unit {result.pass.unit}</dd></div><div><dt>Pass type</dt><dd>{result.pass.accessType === 'premium' ? 'Premium' : 'Standard'}</dd></div><div><dt>Access time</dt><dd>{formatExpiry(result.accessTime)}</dd></div><div><dt>Expiration</dt><dd>{formatExpiry(result.pass.expiresAt)}</dd></div></dl><p className="used-confirmation">This single-use pass is now marked USED.</p></> : <p>{result.reason}</p>}</div></div>}</section>
       </div>
-      <p className="helper" style={{ marginTop: 18, textAlign: 'center' }}><ShieldCheck className="icon" style={{ verticalAlign: 'middle', marginRight: 5 }} /> No camera access. No hardware connection. Just a clear verification flow.</p>
+      <p className="helper" style={{ marginTop: 18, textAlign: 'center' }}><ShieldCheck className="icon" style={{ verticalAlign: 'middle', marginRight: 5 }} /> Scan with a supported camera or enter the code manually. Physical locks are not connected.</p>
     </main>
   );
 }
 
-function AboutPage({ onReset }: { onReset: () => void }) {
+function AboutPage({ onReset }: { onReset: () => Promise<void> }) {
+  const [isResetting, setIsResetting] = useState(false);
   return (
     <main className="main-content">
       <div className="top-row reveal"><div><div className="eyebrow">Project information</div><h1 className="page-title">About SMARTLOCK.</h1><p className="page-subtitle">A visitor-access management prototype for residents and property owners.</p></div></div>
@@ -555,17 +533,21 @@ function AboutPage({ onReset }: { onReset: () => void }) {
         <section className="panel panel-pad reveal delay-1">
           <div className="eyebrow">Academic software prototype</div>
           <h2 className="panel-title" style={{ marginTop: 8 }}>Controlled guest access, made clear.</h2>
-          <p className="about-copy">SMARTLOCK is a QR-based visitor access management system designed to provide residents and property owners with a convenient and controlled way to manage temporary guest access.</p>
-          <p className="about-copy">The system demonstrates digital visitor-pass generation, QR-based identification, access-code validation, expiration management, pass revocation, single-use access, and smart-lock access simulation.</p>
-          <p className="about-copy">The current version uses browser-based storage for visitor-pass data and simulates the physical smart-lock mechanism. Pass data remains in this browser on this device.</p>
-          <h3 className="about-subtitle">Future integrations</h3>
-          <ul className="about-list"><li>Physical door-lock hardware</li><li>Cloud database synchronization and cross-device pass sharing</li><li>Real payment processing and advertising networks</li><li>SMS and email notifications</li><li>Camera-based QR scanning</li></ul>
+          <p className="about-copy">SMARTLOCK gives each resident account a private place to create and manage temporary visitor passes. Pass records sync across devices, and shared visitor links show only the information a guest needs.</p>
+          <p className="about-copy">The app supports pass creation, QR and access-code sharing, expiration, revocation, and single-use verification. Pass checks are recorded in the account database.</p>
+          <p className="about-copy">The entry reader is still a simulation. No physical door lock is connected, and verification in this app does not unlock a real door.</p>
+          <h3 className="about-subtitle">Not configured</h3>
+          <ul className="about-list"><li>Physical door-lock hardware integration</li><li>Payment processing or live advertising</li><li>SMS and email notifications</li></ul>
         </section>
         <section className="panel panel-pad about-reset reveal delay-2">
-          <div className="eyebrow">Developer tools</div>
-          <h2 className="panel-title" style={{ marginTop: 8 }}>Demo data</h2>
-          <p className="panel-kicker">Clear all visitor passes stored by this browser. The dashboard will return to an empty state. This cannot be undone.</p>
-          <button className="button button-danger" onClick={onReset} data-testid="button-reset-demo"><RotateCcw className="icon" /> Reset demo data</button>
+          <div className="eyebrow">Account data</div>
+          <h2 className="panel-title" style={{ marginTop: 8 }}>Delete your passes</h2>
+          <p className="panel-kicker">Permanently delete every visitor pass linked to this account. This cannot be undone.</p>
+          <button className="button button-danger" disabled={isResetting} onClick={() => {
+            if (!window.confirm('Delete all visitor passes linked to this account? This cannot be undone.')) return;
+            setIsResetting(true);
+            void onReset().finally(() => setIsResetting(false));
+          }} data-testid="button-reset-demo">{isResetting ? 'Deleting…' : 'Delete all passes'} <RotateCcw className="icon" /></button>
         </section>
       </div>
     </main>
@@ -584,6 +566,18 @@ function AuthLoadingPage() {
   return <main className="auth-loading" role="status"><span className="auth-loading-mark" /><span>Loading your secure SMARTLOCK session…</span></main>;
 }
 
+function PassesLoadState({ error, onRetry }: { error: boolean; onRetry: () => void }) {
+  return (
+    <main className="main-content">
+      <section className="panel panel-pad" role={error ? 'alert' : 'status'}>
+        <h1 className="panel-title">{error ? 'Passes could not be loaded' : 'Loading your passes…'}</h1>
+        <p className="panel-kicker">{error ? 'Your account data has not been changed. Check your connection and try again.' : 'Connecting to your secure resident account.'}</p>
+        {error && <button className="button button-primary" onClick={onRetry}>Try again</button>}
+      </section>
+    </main>
+  );
+}
+
 function ClerkQueryClientCacheInvalidator() {
   const { addListener } = useClerk();
   const currentQueryClient = useQueryClient();
@@ -599,14 +593,63 @@ function ClerkQueryClientCacheInvalidator() {
   return null;
 }
 
+function SharedPassRoute({ passId, now, onCopy, onShare }: { passId: string; now: number; onCopy: (token: string) => void; onShare: (pass: AccessPass) => void }) {
+  const publicPassLookup = useLookupPublicPass();
+  const [pass, setPass] = useState<PublicPass | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [loadedPassId, setLoadedPassId] = useState('');
+  const lookupPassRef = useRef(publicPassLookup.mutateAsync);
+  lookupPassRef.current = publicPassLookup.mutateAsync;
+
+  useEffect(() => {
+    let active = true;
+    const lookupPass = lookupPassRef.current;
+    setLoadedPassId('');
+    setPass(null);
+    setLoadError(false);
+    void lookupPass({ data: { passId } })
+      .then((result) => {
+        if (!active) return;
+        setPass(result);
+        setLoadedPassId(passId);
+      })
+      .catch(() => {
+        if (!active) return;
+        setLoadError(true);
+        setLoadedPassId(passId);
+      });
+    return () => { active = false; };
+  }, [passId]);
+
+  if (loadedPassId !== passId) {
+    return <main className="main-content"><section className="panel panel-pad" role="status"><h1 className="panel-title">Loading visitor pass…</h1><p className="panel-kicker">Checking this share link.</p></section></main>;
+  }
+  if (loadError || !pass) {
+    return <main className="main-content"><section className="panel panel-pad" role="alert"><h1 className="panel-title">Pass not found</h1><p className="panel-kicker">This share link may be invalid, or the resident may have deleted the pass.</p></section></main>;
+  }
+
+  const visitorPass: AccessPass = { ...pass, notes: null };
+  return <PassDetails pass={visitorPass} onRevoke={() => undefined} onCopy={onCopy} onShare={onShare} now={now} canManage={false} />;
+}
+
 function RouterApp() {
   const [location, setLocation] = useLocation();
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
   const { signOut } = useClerk();
-  const [passes, setPasses] = useState<AccessPass[]>(loadPasses);
   const [toast, setToast] = useState('');
   const [now, setNow] = useState(Date.now());
+  const currentQueryClient = useQueryClient();
+  const passesQuery = useListPasses({ query: { queryKey: getListPassesQueryKey(), enabled: Boolean(isLoaded && isSignedIn) } });
+  const createPassMutation = useCreatePass();
+  const revokePassMutation = useRevokePass();
+  const verifyPassMutation = useVerifyPass();
+  const resetPassesMutation = useResetPasses();
+  const legacyImportMutation = useImportLegacyPasses();
+  const legacyImportRef = useRef(legacyImportMutation.mutateAsync);
+  legacyImportRef.current = legacyImportMutation.mutateAsync;
+  const legacyImportStarted = useRef(false);
+  const passes = passesQuery.data ?? [];
   const passId = location.startsWith('/passes/') ? decodeURIComponent(location.slice('/passes/'.length)) : '';
   const selectedPass = passes.find((pass) => pass.id === passId);
   const signedIn = Boolean(isSignedIn);
@@ -615,9 +658,63 @@ function RouterApp() {
     email: user?.primaryEmailAddress?.emailAddress || '',
     imageUrl: user?.imageUrl,
   };
-  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(passes)); }, [passes]);
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 15000); return () => window.clearInterval(timer); }, []);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(''), 2800); return () => window.clearTimeout(timer); }, [toast]);
+  useEffect(() => {
+    if (!signedIn || !passesQuery.isSuccess || legacyImportStarted.current) {
+      return;
+    }
+
+    legacyImportStarted.current = true;
+    let stored: string | null;
+    try {
+      if (localStorage.getItem(LEGACY_IMPORT_COMPLETE_KEY)) return;
+      stored = localStorage.getItem(STORAGE_KEY);
+    } catch {
+      setToast('Browser storage is unavailable, so the old pass backup could not be checked.');
+      return;
+    }
+    if (stored === null) {
+      try { localStorage.setItem(LEGACY_IMPORT_COMPLETE_KEY, 'true'); } catch { /* The pass list still works without a migration marker. */ }
+      return;
+    }
+
+    let legacyPasses: LegacyPass[];
+    try {
+      legacyPasses = legacyPassesFrom(JSON.parse(stored));
+    } catch {
+      setToast('Your old browser pass backup could not be read. It has been left untouched.');
+      return;
+    }
+
+    void (async () => {
+      try {
+        let importedCount = 0;
+        let backupCleanupFailed = false;
+        const importLegacy = legacyImportRef.current;
+        for (let index = 0; index < legacyPasses.length; index += 100) {
+          const batch = legacyPasses.slice(index, index + 100);
+          const result = await importLegacy({ data: { passes: batch } });
+          importedCount += result.importedCount;
+        }
+        try {
+          localStorage.setItem(LEGACY_IMPORT_COMPLETE_KEY, 'true');
+          localStorage.removeItem(STORAGE_KEY);
+        } catch {
+          backupCleanupFailed = true;
+        }
+        await currentQueryClient.invalidateQueries({ queryKey: getListPassesQueryKey() });
+        if (backupCleanupFailed) {
+          setToast('Passes are in your account, but the old browser backup could not be cleared.');
+        } else if (importedCount > 0) {
+          setToast(`${importedCount} browser pass${importedCount === 1 ? '' : 'es'} moved to your account.`);
+        }
+      } catch {
+        legacyImportStarted.current = false;
+        setToast('Your browser pass backup could not be moved. It has been kept here; refresh to retry.');
+      }
+    })();
+  }, [signedIn, passesQuery.isSuccess, currentQueryClient]);
   const notify = (message: string) => setToast(message);
   const onCopy = async (token: string) => {
     try {
@@ -627,19 +724,38 @@ function RouterApp() {
       notify('Clipboard unavailable. Select the access code to copy it.');
     }
   };
-  const onCreate = (name: string, unit: string, type: AccessType, expiresAt: Date, notes: string) => {
-    const pass = createPass(name, unit, type, expiresAt, notes, passes);
-    setPasses((current) => [pass, ...current]);
+  const onCreate = async (name: string, unit: string, type: AccessType, expiresAt: Date, notes: string) => {
+    const pass = await createPassMutation.mutateAsync({
+      data: {
+        visitorName: name.trim(),
+        unit: unit.trim(),
+        accessType: type,
+        expiresAt: expiresAt.toISOString(),
+        notes: notes.trim() || undefined,
+      },
+    });
+    currentQueryClient.setQueryData<AccessPass[]>(getListPassesQueryKey(), (current) => [pass, ...(current ?? []).filter((item) => item.id !== pass.id)]);
+    void currentQueryClient.invalidateQueries({ queryKey: getListPassesQueryKey() });
     return pass;
   };
-  const onRevoke = (id: string) => { const revokedAt = new Date().toISOString(); setPasses((current) => current.map((pass) => pass.id === id ? { ...pass, status: 'revoked', revokedAt } : pass)); notify('Pass revoked'); };
-  const onVerify = (rawToken: string): VerificationResult => {
-    const validation = validateAccess(rawToken, passes);
-    if (!validation.ok) return validation;
-    const usedPass = { ...validation.pass, status: 'used' as const, usedAt: validation.accessTime };
-    setPasses((current) => current.map((item) => item.id === usedPass.id ? usedPass : item));
-    notify('Entry verified');
-    return { ...validation, pass: usedPass };
+  const onRevoke = async (id: string) => {
+    try {
+      const revokedPass = await revokePassMutation.mutateAsync({ id });
+      currentQueryClient.setQueryData<AccessPass[]>(getListPassesQueryKey(), (current) => current?.map((pass) => pass.id === id ? revokedPass : pass));
+      void currentQueryClient.invalidateQueries({ queryKey: getListPassesQueryKey() });
+      notify('Pass revoked');
+    } catch {
+      notify('This pass could not be revoked. It may no longer be active.');
+    }
+  };
+  const onVerify = async (rawToken: string): Promise<VerificationResult> => {
+    const result = await verifyPassMutation.mutateAsync({ data: { token: rawToken.trim() } });
+    void currentQueryClient.invalidateQueries({ queryKey: getListPassesQueryKey() });
+    if (result.ok && result.pass && result.accessTime) {
+      notify('Entry verified');
+      return { ok: true, pass: result.pass, accessTime: result.accessTime };
+    }
+    return { ok: false, reason: result.reason || 'Access denied — invalid visitor credential.' };
   };
   const onShare = async (pass: AccessPass) => {
     const passUrl = window.location.href;
@@ -658,18 +774,29 @@ function RouterApp() {
       }
     }
   };
-  const onReset = () => {
-    if (!window.confirm('Reset demo data? This permanently removes all visitor passes saved in this browser.')) return;
-    setPasses([]);
-    notify('Demo data reset');
-    setLocation('/dashboard');
+  const onReset = async () => {
+    try {
+      await resetPassesMutation.mutateAsync();
+      currentQueryClient.setQueryData<AccessPass[]>(getListPassesQueryKey(), []);
+      void currentQueryClient.invalidateQueries({ queryKey: getListPassesQueryKey() });
+      notify('All passes deleted');
+      setLocation('/dashboard');
+    } catch {
+      notify('Passes could not be deleted. Check your connection and try again.');
+    }
   };
   if (!isLoaded) return <AuthLoadingPage />;
+  if (signedIn && passesQuery.isLoading) {
+    return <AppShell currentPath={location} account={account} onSignOut={() => { void signOut({ redirectUrl: basePath || '/' }); }}><PassesLoadState error={false} onRetry={() => undefined} />{toast && <div className="toast" role="status">{toast}</div>}</AppShell>;
+  }
+  if (signedIn && passesQuery.isError) {
+    return <AppShell currentPath={location} account={account} onSignOut={() => { void signOut({ redirectUrl: basePath || '/' }); }}><PassesLoadState error onRetry={() => { void passesQuery.refetch(); }} />{toast && <div className="toast" role="status">{toast}</div>}</AppShell>;
+  }
   const page = <Switch>
     <Route path="/"><Show when="signed-in"><Redirect to="/dashboard" /></Show><Show when="signed-out"><PublicLandingPage /></Show></Route>
     <Route path="/dashboard">{signedIn ? <Overview passes={passes} onRevoke={onRevoke} onCopy={onCopy} /> : <Redirect to="/" />}</Route>
     <Route path="/passes"><ProtectedPage signedIn={signedIn}><PassesPage passes={passes} onRevoke={onRevoke} onCopy={onCopy} /></ProtectedPage></Route>
-    <Route path="/passes/:id">{selectedPass ? <PassDetails pass={selectedPass} onRevoke={onRevoke} onCopy={onCopy} onShare={onShare} now={now} canManage={signedIn} /> : signedIn ? <NotFound /> : <Redirect to="/" />}</Route>
+    <Route path="/passes/:id">{selectedPass ? <PassDetails pass={selectedPass} onRevoke={onRevoke} onCopy={onCopy} onShare={onShare} now={now} canManage={signedIn} /> : passId ? <SharedPassRoute passId={passId} now={now} onCopy={onCopy} onShare={onShare} /> : <NotFound />}</Route>
     <Route path="/guest"><ProtectedPage signedIn={signedIn}><GuestPage onCreate={onCreate} notify={notify} /></ProtectedPage></Route>
     <Route path="/lock"><ProtectedPage signedIn={signedIn}><LockPage onVerify={onVerify} /></ProtectedPage></Route>
     <Route path="/about"><ProtectedPage signedIn={signedIn}><AboutPage onReset={onReset} /></ProtectedPage></Route>
