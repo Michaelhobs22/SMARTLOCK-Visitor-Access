@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Link, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
-import { Copy, DoorOpen, Download, ExternalLink, Info, LayoutDashboard, LockKeyhole, Plus, QrCode, RotateCcw, Search, Share2, ShieldCheck, UserRoundPlus, X } from 'lucide-react';
+import { Link, Redirect, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
+import { ClerkProvider, Show, SignIn, SignUp, useAuth, useClerk, useUser } from '@clerk/react';
+import { publishableKeyFromHost } from '@clerk/react/internal';
+import { shadcn } from '@clerk/themes';
+import { Copy, DoorOpen, Download, ExternalLink, Info, LayoutDashboard, LockKeyhole, LogOut, Plus, QrCode, RotateCcw, Search, Share2, ShieldCheck, UserRoundPlus, X } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -27,6 +30,66 @@ type AccessPass = {
 
 const STORAGE_KEY = 'smartlock-access-passes';
 const queryClient = new QueryClient();
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
+const clerkPubKey = publishableKeyFromHost(window.location.hostname, import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
+const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+
+if (!clerkPubKey) {
+  throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY for Clerk authentication.');
+}
+
+function stripBase(path: string) {
+  return basePath && path.startsWith(basePath) ? path.slice(basePath.length) || '/' : path;
+}
+
+const clerkAppearance = {
+  theme: shadcn,
+  cssLayerName: 'clerk',
+  options: {
+    logoPlacement: 'inside' as const,
+    logoLinkUrl: basePath || '/',
+    logoImageUrl: `${window.location.origin}${basePath}/logo.svg`,
+  },
+  variables: {
+    colorPrimary: '#c5f56a',
+    colorForeground: '#152332',
+    colorMutedForeground: '#697681',
+    colorDanger: '#a8342b',
+    colorBackground: '#fffdfa',
+    colorInput: '#fffdfa',
+    colorInputForeground: '#152332',
+    colorNeutral: '#d2dae0',
+    fontFamily: 'Manrope, sans-serif',
+    borderRadius: '12px',
+  },
+  elements: {
+    rootBox: { width: '100%', display: 'flex', justifyContent: 'center' },
+    cardBox: { width: 'min(440px, 100%)', maxWidth: '100%', backgroundColor: '#fffdfa', border: '1px solid #d2dae0', borderRadius: '18px', boxShadow: '0 18px 48px rgba(21, 35, 50, 0.1)', overflow: 'hidden' },
+    card: { backgroundColor: 'transparent', border: 'none', borderRadius: 0, boxShadow: 'none' },
+    footer: { backgroundColor: 'transparent', border: 'none', borderRadius: 0, boxShadow: 'none' },
+    headerTitle: { color: '#152332', fontFamily: 'Manrope, sans-serif', fontWeight: 800 },
+    headerSubtitle: { color: '#697681' },
+    socialButtonsBlockButtonText: { color: '#152332', fontWeight: 700 },
+    formFieldLabel: { color: '#152332', fontWeight: 700 },
+    footerActionLink: { color: '#253443', fontWeight: 800 },
+    footerActionText: { color: '#697681' },
+    dividerText: { color: '#697681' },
+    identityPreviewEditButton: { color: '#253443' },
+    formFieldSuccessText: { color: '#237343' },
+    alertText: { color: '#8c302a' },
+    logoBox: { borderRadius: '10px', overflow: 'hidden' },
+    logoImage: { width: '36px', height: '36px', objectFit: 'cover' },
+    socialButtonsBlockButton: { backgroundColor: '#fffdfa', border: '1px solid #d2dae0', borderRadius: '10px', color: '#152332' },
+    formButtonPrimary: { backgroundColor: '#152332', borderRadius: '10px', color: '#fffdfa', fontWeight: 800 },
+    formFieldInput: { backgroundColor: '#fffdfa', borderColor: '#d2dae0', borderRadius: '10px', color: '#152332' },
+    footerAction: { color: '#697681' },
+    dividerLine: { backgroundColor: '#d2dae0' },
+    alert: { backgroundColor: '#fff2f0', borderColor: '#f0c7c2' },
+    otpCodeFieldInput: { backgroundColor: '#fffdfa', borderColor: '#d2dae0', color: '#152332' },
+    formFieldRow: { color: '#152332' },
+    main: { backgroundColor: 'transparent' },
+  },
+};
 
 function makeToken(existing: AccessPass[] = []) {
   let token = '';
@@ -153,9 +216,61 @@ function initials(name: string) {
   return name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
 }
 
-function AppShell({ children, currentPath }: { children: ReactNode; currentPath: string }) {
+function PublicLandingPage() {
+  return (
+    <div className="landing-page">
+      <header className="landing-header">
+        <Link href="/" className="brand" data-testid="link-landing-brand"><span className="brand-mark" aria-hidden="true" /><span className="brand-name">SMARTLOCK</span></Link>
+        <nav className="landing-nav" aria-label="Account">
+          <Link href="/sign-in" className="landing-signin" data-testid="link-landing-sign-in">Sign in</Link>
+          <Link href="/sign-up" className="button button-accent" data-testid="link-landing-sign-up">Create account</Link>
+        </nav>
+      </header>
+      <main className="landing-main">
+        <section className="landing-copy">
+          <div className="eyebrow">RESIDENT ACCESS · MADE SIMPLE</div>
+          <h1>Give guests a pass.<br /><span>Keep control.</span></h1>
+          <p>Create a unique, time-limited visitor pass, then verify it at a simulated entry reader. Sign in to manage your resident console.</p>
+          <div className="landing-actions">
+            <Link href="/sign-up" className="button button-accent" data-testid="button-landing-create-account">Create a resident account <ExternalLink className="icon" /></Link>
+            <Link href="/sign-in" className="button button-soft" data-testid="button-landing-sign-in">I already have an account</Link>
+          </div>
+          <div className="landing-assurance"><ShieldCheck className="icon" /><span>Accounts use secure Clerk sign-in. Pass records in this demo remain in the current browser.</span></div>
+        </section>
+        <aside className="landing-visual" aria-label="SMARTLOCK visitor pass preview">
+          <div className="landing-orbit landing-orbit-one" /><div className="landing-orbit landing-orbit-two" />
+          <div className="landing-reader"><LockKeyhole className="icon" /><span>SIMULATED READER</span></div>
+          <div className="landing-ticket">
+            <div className="landing-ticket-head"><span>SMARTLOCK</span><QrCode className="icon" /></div>
+            <div className="landing-ticket-label">VISITOR ACCESS PASS</div>
+            <div className="landing-ticket-name">One guest. One pass.</div>
+            <div className="landing-ticket-code">SL-••••••••••••••••••••</div>
+            <div className="landing-ticket-foot"><span>TIME-LIMITED</span><span>ONE USE</span></div>
+          </div>
+          <div className="landing-visual-caption"><span className="status-dot" /> Access stays clear from issue to entry.</div>
+        </aside>
+      </main>
+      <footer className="landing-footer">This is a demonstration. Visitor passes stay in this browser and do not sync across devices or control a physical lock.</footer>
+    </div>
+  );
+}
+
+function PublicVisitorShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="visitor-shell">
+      <header className="visitor-header">
+        <Link href="/" className="brand" data-testid="link-visitor-brand"><span className="brand-mark" aria-hidden="true" /><span className="brand-name">SMARTLOCK</span></Link>
+        <div className="visitor-header-actions"><span>Visitor pass</span><Link href="/sign-in" className="visitor-signin" data-testid="link-visitor-sign-in">Resident sign in</Link></div>
+      </header>
+      <div className="visitor-demo-note">This shared pass page is a demo. Passes are stored in the resident’s browser, so this link may not load on another device.</div>
+      {children}
+    </div>
+  );
+}
+
+function AppShell({ children, currentPath, account, onSignOut }: { children: ReactNode; currentPath: string; account: { name: string; email: string; imageUrl?: string | null }; onSignOut: () => void }) {
   const navItems = [
-    { href: '/', label: 'Overview', icon: LayoutDashboard },
+    { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
     { href: '/passes', label: 'Passes', icon: UserRoundPlus },
     { href: '/guest', label: 'Create pass', icon: Plus },
     { href: '/lock', label: 'Smart lock', icon: LockKeyhole },
@@ -164,7 +279,7 @@ function AppShell({ children, currentPath }: { children: ReactNode; currentPath:
   return (
     <div className="app-shell">
       <aside className="side-rail" data-testid="navigation-sidebar">
-        <Link href="/" className="brand" data-testid="link-brand">
+          <Link href="/dashboard" className="brand" data-testid="link-brand">
           <span className="brand-mark" aria-hidden="true" />
           <span className="brand-name">SMARTLOCK</span>
         </Link>
@@ -178,16 +293,22 @@ function AppShell({ children, currentPath }: { children: ReactNode; currentPath:
           ))}
         </nav>
         <div className="rail-bottom">
+          <div className="rail-account">
+            <div className="account-avatar">{account.imageUrl ? <img src={account.imageUrl} alt="" /> : initials(account.name || account.email || 'R')}</div>
+            <div className="account-copy"><strong>{account.name || 'Resident'}</strong><span>{account.email}</span></div>
+            <button className="account-signout" onClick={onSignOut} aria-label="Sign out" title="Sign out" data-testid="button-sign-out"><LogOut className="icon" /></button>
+          </div>
           <div className="rail-status"><span className="status-dot" /><span><strong>Demo mode</strong><br />Passes stay on this device</span></div>
         </div>
       </aside>
       <div className="main-area">
         <header className="mobile-head">
-          <Link href="/" className="brand" data-testid="link-mobile-brand">
+          <Link href="/dashboard" className="brand" data-testid="link-mobile-brand">
             <span className="brand-mark" aria-hidden="true" /><span className="brand-name">SMARTLOCK</span>
           </Link>
           <nav className="mobile-nav" aria-label="Mobile navigation">
             {navItems.map(({ href, label, icon: Icon }) => <Link key={href} href={href} className={currentPath === href || (href === '/passes' && currentPath.startsWith('/passes/')) ? 'active' : ''} aria-label={label} title={label} data-testid={`link-mobile-${label.toLowerCase().replace(' ', '-')}`}><Icon className="icon" /></Link>)}
+            <button className="mobile-signout" onClick={onSignOut} aria-label="Sign out" title="Sign out" data-testid="button-mobile-sign-out"><LogOut className="icon" /></button>
           </nav>
         </header>
         {children}
@@ -277,7 +398,7 @@ function PassesPage({ passes, onRevoke, onCopy }: { passes: AccessPass[]; onRevo
   );
 }
 
-function PassDetails({ pass, onRevoke, onCopy, onShare, now }: { pass: AccessPass; onRevoke: (id: string) => void; onCopy: (token: string) => void; onShare: (pass: AccessPass) => void; now: number }) {
+function PassDetails({ pass, onRevoke, onCopy, onShare, now, canManage }: { pass: AccessPass; onRevoke: (id: string) => void; onCopy: (token: string) => void; onShare: (pass: AccessPass) => void; now: number; canManage: boolean }) {
   const qrRef = useRef<SVGSVGElement>(null);
   const currentStatus = statusFor(pass);
   function downloadQr() {
@@ -294,41 +415,41 @@ function PassDetails({ pass, onRevoke, onCopy, onShare, now }: { pass: AccessPas
     <main className="main-content">
       <div className="top-row reveal">
         <div>
-          <div className="eyebrow">Individual guest pass · Unit {pass.unit}</div>
-          <h1 className="page-title">{pass.visitorName}</h1>
-          <p className="page-subtitle">This is the QR code and management page for this visitor’s pass.</p>
+          <div className="eyebrow">{canManage ? `Individual guest pass · Unit ${pass.unit}` : 'Visitor access pass'}</div>
+          <h1 className="page-title">{canManage ? pass.visitorName : 'Your guest pass'}</h1>
+          <p className="page-subtitle">{canManage ? 'This is the QR code and management page for this visitor’s pass.' : 'Show this QR code or access code at the simulated entry reader.'}</p>
         </div>
-        <Link href="/passes" className="button button-soft" data-testid="link-back-to-passes">Back to all passes</Link>
+        {canManage && <Link href="/passes" className="button button-soft" data-testid="link-back-to-passes">Back to all passes</Link>}
       </div>
       <div className="pass-detail-grid">
         <section className="panel panel-pad reveal delay-1">
           <div className="detail-heading">
             <div>
-              <div className="eyebrow">Pass status</div>
-              <h2 className="panel-title" style={{ marginTop: 8 }}>{pass.visitorName}’s access</h2>
+              <div className="eyebrow">{canManage ? 'Pass status' : 'Entry status'}</div>
+              <h2 className="panel-title" style={{ marginTop: 8 }}>{canManage ? `${pass.visitorName}’s access` : 'Pass details'}</h2>
             </div>
             <span className={`badge badge-${currentStatus}`} data-testid={`detail-status-${pass.id}`}>{currentStatus}</span>
           </div>
           <div className="detail-list">
-            <div className="detail-row"><span>Visitor</span><strong data-testid={`detail-visitor-${pass.id}`}>{pass.visitorName}</strong></div>
             <div className="detail-row"><span>Unit</span><strong>{pass.unit}</strong></div>
-            <div className="detail-row"><span>Access type</span><strong>{pass.accessType === 'premium' ? 'Premium' : 'Standard'}</strong></div>
-            <div className="detail-row"><span>Created</span><strong>{formatExpiry(pass.createdAt)}</strong></div>
+            {canManage && <div className="detail-row"><span>Visitor</span><strong data-testid={`detail-visitor-${pass.id}`}>{pass.visitorName}</strong></div>}
+            {canManage && <div className="detail-row"><span>Access type</span><strong>{pass.accessType === 'premium' ? 'Premium' : 'Standard'}</strong></div>}
+            {canManage && <div className="detail-row"><span>Created</span><strong>{formatExpiry(pass.createdAt)}</strong></div>}
             <div className="detail-row"><span>Expires</span><strong>{formatExpiry(pass.expiresAt)}</strong></div>
             {currentStatus === 'active' && <div className="detail-row"><span>Time remaining</span><strong>{formatRemaining(pass.expiresAt, now)}</strong></div>}
-            {pass.usedAt && <div className="detail-row"><span>Used at</span><strong>{formatExpiry(pass.usedAt)}</strong></div>}
-            {pass.revokedAt && <div className="detail-row"><span>Revoked at</span><strong>{formatExpiry(pass.revokedAt)}</strong></div>}
-            {pass.notes && <div className="detail-row"><span>Purpose / notes</span><strong>{pass.notes}</strong></div>}
+            {canManage && pass.usedAt && <div className="detail-row"><span>Used at</span><strong>{formatExpiry(pass.usedAt)}</strong></div>}
+            {canManage && pass.revokedAt && <div className="detail-row"><span>Revoked at</span><strong>{formatExpiry(pass.revokedAt)}</strong></div>}
+            {canManage && pass.notes && <div className="detail-row"><span>Purpose / notes</span><strong>{pass.notes}</strong></div>}
           </div>
-          <div className="detail-actions">
+          {canManage && <div className="detail-actions">
             <Link href="/passes" className="button button-soft" data-testid="link-return-overview">Return to all passes</Link>
             {currentStatus === 'active' && <button className="button button-danger" onClick={() => onRevoke(pass.id)} data-testid={`button-detail-revoke-${pass.id}`}><X className="icon" /> Revoke this pass</button>}
-          </div>
+          </div>}
           {currentStatus !== 'active' && <p className="detail-warning" data-testid={`text-pass-inactive-${pass.id}`}>This pass is {currentStatus} and can no longer be used to enter.</p>}
         </section>
         <section className="panel qr-card detail-qr reveal delay-2" data-testid={`card-pass-qr-${pass.id}`}>
           <div className="eyebrow">SMARTLOCK QR pass</div>
-          <h2 className="panel-title" style={{ marginTop: 8 }}>{pass.visitorName}</h2>
+          <h2 className="panel-title" style={{ marginTop: 8 }}>{canManage ? pass.visitorName : 'Ready for entry'}</h2>
           <div className="qr-wrap"><QRCodeSVG ref={qrRef} value={pass.token} size={220} bgColor="#fffdfa" fgColor="#152332" level="Q" includeMargin title={`QR access pass for ${pass.visitorName}`} data-testid={`img-pass-qr-${pass.id}`} /></div>
           <div className="token" data-testid={`text-pass-token-${pass.id}`}>{pass.token}</div>
           <div className="qr-actions">
@@ -438,7 +559,7 @@ function AboutPage({ onReset }: { onReset: () => void }) {
           <p className="about-copy">The system demonstrates digital visitor-pass generation, QR-based identification, access-code validation, expiration management, pass revocation, single-use access, and smart-lock access simulation.</p>
           <p className="about-copy">The current version uses browser-based storage for visitor-pass data and simulates the physical smart-lock mechanism. Pass data remains in this browser on this device.</p>
           <h3 className="about-subtitle">Future integrations</h3>
-          <ul className="about-list"><li>Physical door-lock hardware</li><li>Cloud database synchronization and production authentication</li><li>Real payment processing and advertising networks</li><li>SMS and email notifications</li><li>Camera-based QR scanning</li></ul>
+          <ul className="about-list"><li>Physical door-lock hardware</li><li>Cloud database synchronization and cross-device pass sharing</li><li>Real payment processing and advertising networks</li><li>SMS and email notifications</li><li>Camera-based QR scanning</li></ul>
         </section>
         <section className="panel panel-pad about-reset reveal delay-2">
           <div className="eyebrow">Developer tools</div>
@@ -451,13 +572,49 @@ function AboutPage({ onReset }: { onReset: () => void }) {
   );
 }
 
+function SignInPage() {
+  return <main className="auth-page" data-testid="page-sign-in"><SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} /></main>;
+}
+
+function SignUpPage() {
+  return <main className="auth-page" data-testid="page-sign-up"><SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} /></main>;
+}
+
+function AuthLoadingPage() {
+  return <main className="auth-loading" role="status"><span className="auth-loading-mark" /><span>Loading your secure SMARTLOCK session…</span></main>;
+}
+
+function ClerkQueryClientCacheInvalidator() {
+  const { addListener } = useClerk();
+  const currentQueryClient = useQueryClient();
+  const previousUserId = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const unsubscribe = addListener(({ user }) => {
+      const userId = user?.id ?? null;
+      if (previousUserId.current !== undefined && previousUserId.current !== userId) currentQueryClient.clear();
+      previousUserId.current = userId;
+    });
+    return unsubscribe;
+  }, [addListener, currentQueryClient]);
+  return null;
+}
+
 function RouterApp() {
   const [location, setLocation] = useLocation();
+  const { isLoaded, isSignedIn } = useAuth();
+  const { user } = useUser();
+  const { signOut } = useClerk();
   const [passes, setPasses] = useState<AccessPass[]>(loadPasses);
   const [toast, setToast] = useState('');
   const [now, setNow] = useState(Date.now());
   const passId = location.startsWith('/passes/') ? decodeURIComponent(location.slice('/passes/'.length)) : '';
   const selectedPass = passes.find((pass) => pass.id === passId);
+  const signedIn = Boolean(isSignedIn);
+  const account = {
+    name: user?.fullName || user?.primaryEmailAddress?.emailAddress || 'Resident',
+    email: user?.primaryEmailAddress?.emailAddress || '',
+    imageUrl: user?.imageUrl,
+  };
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(passes)); }, [passes]);
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 15000); return () => window.clearInterval(timer); }, []);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(''), 2800); return () => window.clearTimeout(timer); }, [toast]);
@@ -505,22 +662,59 @@ function RouterApp() {
     if (!window.confirm('Reset demo data? This permanently removes all visitor passes saved in this browser.')) return;
     setPasses([]);
     notify('Demo data reset');
-    setLocation('/');
+    setLocation('/dashboard');
   };
+  if (!isLoaded) return <AuthLoadingPage />;
   const page = <Switch>
-    <Route path="/"><Overview passes={passes} onRevoke={onRevoke} onCopy={onCopy} /></Route>
-    <Route path="/passes"><PassesPage passes={passes} onRevoke={onRevoke} onCopy={onCopy} /></Route>
-    <Route path="/passes/:id">{selectedPass ? <PassDetails pass={selectedPass} onRevoke={onRevoke} onCopy={onCopy} onShare={onShare} now={now} /> : <NotFound />}</Route>
-    <Route path="/guest"><GuestPage onCreate={onCreate} notify={notify} /></Route>
-    <Route path="/lock"><LockPage onVerify={onVerify} /></Route>
-    <Route path="/about"><AboutPage onReset={onReset} /></Route>
-    <Route><NotFound /></Route>
+    <Route path="/"><Show when="signed-in"><Redirect to="/dashboard" /></Show><Show when="signed-out"><PublicLandingPage /></Show></Route>
+    <Route path="/dashboard">{signedIn ? <Overview passes={passes} onRevoke={onRevoke} onCopy={onCopy} /> : <Redirect to="/" />}</Route>
+    <Route path="/passes"><ProtectedPage signedIn={signedIn}><PassesPage passes={passes} onRevoke={onRevoke} onCopy={onCopy} /></ProtectedPage></Route>
+    <Route path="/passes/:id">{selectedPass ? <PassDetails pass={selectedPass} onRevoke={onRevoke} onCopy={onCopy} onShare={onShare} now={now} canManage={signedIn} /> : signedIn ? <NotFound /> : <Redirect to="/" />}</Route>
+    <Route path="/guest"><ProtectedPage signedIn={signedIn}><GuestPage onCreate={onCreate} notify={notify} /></ProtectedPage></Route>
+    <Route path="/lock"><ProtectedPage signedIn={signedIn}><LockPage onVerify={onVerify} /></ProtectedPage></Route>
+    <Route path="/about"><ProtectedPage signedIn={signedIn}><AboutPage onReset={onReset} /></ProtectedPage></Route>
+    <Route>{signedIn ? <NotFound /> : <Redirect to="/" />}</Route>
   </Switch>;
-  return <><AppShell currentPath={location}>{page}</AppShell>{toast && <div className="toast" role="status" data-testid="toast-message">{toast}</div>}</>;
+  const toastMessage = toast && <div className="toast" role="status" data-testid="toast-message">{toast}</div>;
+  if (signedIn) {
+    return <AppShell currentPath={location} account={account} onSignOut={() => { void signOut({ redirectUrl: basePath || '/' }); }}>{page}{toastMessage}</AppShell>;
+  }
+  if (location.startsWith('/passes/')) return <PublicVisitorShell>{page}{toastMessage}</PublicVisitorShell>;
+  return <>{page}{toastMessage}</>;
+}
+
+function ProtectedPage({ children, signedIn }: { children: ReactNode; signedIn: boolean }) {
+  return signedIn ? <>{children}</> : <Redirect to="/" />;
+}
+
+function ClerkApp() {
+  const [, setLocation] = useLocation();
+  return (
+    <ClerkProvider
+      publishableKey={clerkPubKey}
+      proxyUrl={clerkProxyUrl}
+      appearance={clerkAppearance}
+      signInUrl={`${basePath}/sign-in`}
+      signUpUrl={`${basePath}/sign-up`}
+      localization={{
+        signIn: { start: { title: 'Welcome back', subtitle: 'Sign in to manage your visitor passes.' } },
+        signUp: { start: { title: 'Create your resident account', subtitle: 'Get started with SMARTLOCK.' } },
+      }}
+      routerPush={(to) => setLocation(stripBase(to))}
+      routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
+    >
+      <ClerkQueryClientCacheInvalidator />
+      <Switch>
+        <Route path="/sign-in/*?"><SignInPage /></Route>
+        <Route path="/sign-up/*?"><SignUpPage /></Route>
+        <Route><RouterApp /></Route>
+      </Switch>
+    </ClerkProvider>
+  );
 }
 
 function App() {
-  return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><ErrorBoundary resetKey={window.location.pathname}><RouterApp /></ErrorBoundary></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={basePath}><ErrorBoundary resetKey={window.location.pathname}><ClerkApp /></ErrorBoundary></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
 }
 
 export default App;
